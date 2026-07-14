@@ -24,10 +24,29 @@
         <div class="brand-sub" id="adminRoleLabel">অ্যাডমিন প্যানেল</div>
       </div>
     </div>
-    <button class="btn btn-outline btn-sm" id="logoutBtn">লগআউট</button>
+    <div style="display:flex; gap:8px; align-items:center;">
+      <a href="sheet.html" class="btn btn-outline btn-sm" style="text-decoration:none;">মিল শিট</a>
+      <button class="btn btn-outline btn-sm" id="logoutBtn">লগআউট</button>
+    </div>
   </div>
 
   <div class="admin-main">
+
+    <!-- ===== সাইকেল সেটিংস ===== -->
+    <div class="section-title">
+      <h3>মিল সাইকেল</h3>
+    </div>
+    <div class="card" id="cycleCard" style="margin-bottom:32px;">
+      <p id="cycleInfo">লোড হচ্ছে...</p>
+      <button class="btn btn-outline btn-sm" id="newCycleBtn">নতুন সাইকেল শুরু করো</button>
+      <div id="newCycleForm" style="display:none; margin-top:14px;">
+        <div class="field">
+          <label for="cycleStartDate">শুরুর তারিখ</label>
+          <input type="date" id="cycleStartDate" />
+        </div>
+        <button class="btn btn-primary btn-sm" id="confirmNewCycleBtn">কনফার্ম করো</button>
+      </div>
+    </div>
 
     <!-- ===== পেন্ডিং অ্যাপ্রুভাল ===== -->
     <div class="section-title">

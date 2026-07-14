@@ -10,6 +10,8 @@ import {
   where,
   onSnapshot,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getActiveCycle, startNewCycle } from "./cycle.js";
+import { bdToday, formatBanglaDateFull } from "./dateutils.js";
 
 const loadingScreen = document.getElementById("loadingScreen");
 const appShell = document.getElementById("appShell");
@@ -50,6 +52,43 @@ onAuthStateChanged(auth, async (user) => {
 
   listenPendingUsers();
   listenApprovedUsers();
+  loadCycleInfo();
+});
+
+// ---------- সাইকেল সেটিংস ----------
+async function loadCycleInfo() {
+  const cycle = await getActiveCycle();
+  const cycleInfo = document.getElementById("cycleInfo");
+
+  if (!cycle) {
+    cycleInfo.innerHTML = `কোনো সাইকেল চালু নেই। নতুন সাইকেল শুরু করো।`;
+  } else {
+    cycleInfo.innerHTML = `<strong>চলমান সাইকেল:</strong> ${formatBanglaDateFull(cycle.startDate)} থেকে শুরু।`;
+  }
+}
+
+document.getElementById("newCycleBtn").addEventListener("click", () => {
+  const form = document.getElementById("newCycleForm");
+  form.style.display = form.style.display === "none" ? "block" : "none";
+  document.getElementById("cycleStartDate").value = bdToday();
+});
+
+document.getElementById("confirmNewCycleBtn").addEventListener("click", async () => {
+  const startDate = document.getElementById("cycleStartDate").value;
+  if (!startDate) {
+    alert("তারিখ সিলেক্ট করো।");
+    return;
+  }
+  if (!confirm(`${formatBanglaDateFull(startDate)} থেকে নতুন সাইকেল শুরু করতে চাও? আগের সাইকেল আর্কাইভ হয়ে যাবে।`)) return;
+
+  try {
+    await startNewCycle({ startDate, mealsPerDay: ["lunch", "dinner"] });
+    document.getElementById("newCycleForm").style.display = "none";
+    loadCycleInfo();
+  } catch (err) {
+    console.error(err);
+    alert("সাইকেল শুরু করতে সমস্যা হয়েছে।");
+  }
 });
 
 document.getElementById("logoutBtn").addEventListener("click", async () => {

@@ -40,7 +40,29 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // বাকি সব কালেকশনের (cycles, reports ইত্যাদি) rules পরের ধাপে যোগ হবে
-    // যখন সেই ফিচারগুলো বানাবো
+    function isApprovedUser() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'approved';
+    }
+
+    // ===== মিল সাইকেল (মাস) =====
+    match /cycles/{cycleId} {
+      // সব অ্যাপ্রুভড ইউজার (স্টুডেন্ট+অ্যাডমিন) সাইকেল তথ্য পড়তে পারবে
+      allow read: if isApprovedUser();
+      // শুধু অ্যাডমিন নতুন সাইকেল বানাতে/আপডেট করতে পারবে
+      allow write: if isAdmin();
+
+      // ===== প্রতিদিনের মিল এন্ট্রি (প্রতি ইউজারের জন্য একটা ডকুমেন্ট) =====
+      match /mealEntries/{userId} {
+        // নিজেরটা নিজে পড়তে পারবে, অ্যাডমিন সবারটা পড়তে পারবে
+        allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+
+        // নিজে নিজের এন্ট্রি বানাতে/আপডেট করতে পারবে, অ্যাডমিন যেকারো এন্ট্রি ওভাররাইট করতে পারবে
+        allow create, update: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      }
+    }
+
+    // বাকি কালেকশন (reports, polls, guestMeals ইত্যাদি) rules পরের ধাপে যোগ হবে
   }
 }
