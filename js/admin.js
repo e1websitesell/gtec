@@ -21,6 +21,7 @@ const pendingCount = document.getElementById("pendingCount");
 const adminRoleLabel = document.getElementById("adminRoleLabel");
 
 let currentRole = null;
+let currentUid = null;
 
 // ---------- Route guard: শুধু approved admin/subadmin এই পেজ দেখতে পারবে ----------
 onAuthStateChanged(auth, async (user) => {
@@ -45,6 +46,7 @@ onAuthStateChanged(auth, async (user) => {
   }
 
   currentRole = data.role;
+  currentUid = user.uid;
   adminRoleLabel.textContent = currentRole === "mainadmin" ? "মেইন অ্যাডমিন" : "সাব-অ্যাডমিন";
 
   loadingScreen.style.display = "none";
@@ -171,64 +173,137 @@ document.getElementById("approveAllBtn").addEventListener("click", async () => {
   await Promise.all(promises);
 });
 
-// ---------- অ্যাপ্রুভড ইউজার লিস্ট, রুম-ওয়াইজ গ্রুপ করা ----------
+// ---------- অ্যাপ্রুভড ইউজার লিস্ট: অ্যাডমিন টিম + রুম-ওয়াইজ স্টুডেন্ট ----------
+const adminTeamList = document.getElementById("adminTeamList");
+
 function listenApprovedUsers() {
   const q = query(collection(db, "users"), where("status", "==", "approved"));
 
   onSnapshot(q, (snapshot) => {
     if (snapshot.empty) {
       approvedList.innerHTML = `<div class="empty-state">এখনো কোনো অ্যাপ্রুভড ইউজার নেই।</div>`;
+      adminTeamList.innerHTML = "";
       return;
     }
 
     const users = [];
     snapshot.forEach((d) => users.push({ id: d.id, ...d.data() }));
 
-    // রুম নাম্বার অনুযায়ী গ্রুপ করা
-    const groups = {};
-    users
-      .filter((u) => u.role === "student") // শুধু স্টুডেন্ট রুম-ওয়াইজ দেখাবো
-      .forEach((u) => {
-        if (!groups[u.roomNumber]) groups[u.roomNumber] = [];
-        groups[u.roomNumber].push(u);
-      });
+    renderAdminTeam(users.filter((u) => u.role === "mainadmin" || u.role === "subadmin"));
+    renderStudentRooms(users.filter((u) => u.role === "student"));
+  });
+}
 
-    const sortedRooms = Object.keys(groups).sort();
+// ---------- অ্যাডমিন টিম রেন্ডার ----------
+function renderAdminTeam(admins) {
+  const isMainAdmin = currentRole === "mainadmin";
 
-    let html = "";
-    sortedRooms.forEach((room) => {
-      html += `<div class="room-group">
-        <div class="room-group-title">রুম ${escapeHtml(room)}</div>
-        <table class="data-table">
-          <tbody>
-            ${groups[room]
-              .map(
-                (u) => `
-              <tr>
-                <td>${escapeHtml(u.name)}</td>
-                <td>${escapeHtml(u.username)}</td>
-                <td><span class="pill pill-approved">অ্যাপ্রুভড</span></td>
-                <td><button class="btn btn-danger btn-sm" data-delete="${u.id}">ডিলিট</button></td>
-              </tr>`
-              )
-              .join("")}
-          </tbody>
-        </table>
-      </div>`;
+  let rows = admins
+    .map((u) => {
+      const isSelf = u.id === currentUid;
+      const roleLabel = u.role === "mainadmin" ? "মেইন অ্যাডমিন" : "সাব-অ্যাডমিন";
+      let actionCell = "";
+      if (isMainAdmin && u.role === "subadmin") {
+        actionCell = `<button class="btn btn-danger btn-sm" data-demote="${u.id}">সরিয়ে দাও</button>`;
+      } else if (isSelf) {
+        actionCell = `<span style="font-size:12px; color:var(--color-text-muted);">তুমি</span>`;
+      }
+      return `
+        <tr>
+          <td>${escapeHtml(u.name)}</td>
+          <td>${escapeHtml(u.username)}</td>
+          <td><span class="pill pill-approved">${roleLabel}</span></td>
+          <td>${actionCell}</td>
+        </tr>`;
+    })
+    .join("");
+
+  adminTeamList.innerHTML = `
+    <table class="data-table">
+      <thead><tr><th>নাম</th><th>ইউজারনেম</th><th>রোল</th><th>অ্যাকশন</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    ${isMainAdmin ? `<p style="font-size:12.5px; margin-top:10px;">নিচের "ইউজার লিস্ট" থেকে যেকোনো স্টুডেন্টকে সাব-অ্যাডমিন বানাতে পারবে।</p>` : ""}
+  `;
+
+  adminTeamList.querySelectorAll("[data-demote]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!confirm("এই সাব-অ্যাডমিনকে আবার সাধারণ স্টুডেন্ট বানাতে চাও?")) return;
+      try {
+        await updateDoc(doc(db, "users", btn.dataset.demote), { role: "student" });
+      } catch (err) {
+        console.error(err);
+        alert("সমস্যা হয়েছে, আবার চেষ্টা করো।");
+      }
     });
+  });
+}
 
-    approvedList.innerHTML = html;
+// ---------- স্টুডেন্ট লিস্ট, রুম-ওয়াইজ গ্রুপ ----------
+function renderStudentRooms(students) {
+  if (students.length === 0) {
+    approvedList.innerHTML = `<div class="empty-state">এখনো কোনো অ্যাপ্রুভড স্টুডেন্ট নেই।</div>`;
+    return;
+  }
 
-    approvedList.querySelectorAll("[data-delete]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        if (!confirm("এই ইউজারকে ডিলিট করতে চান? এই অ্যাকশন ফেরানো যাবে না।")) return;
-        try {
-          await deleteDoc(doc(db, "users", btn.dataset.delete));
-        } catch (err) {
-          console.error(err);
-          alert("ডিলিট করতে সমস্যা হয়েছে।");
-        }
-      });
+  const isMainAdmin = currentRole === "mainadmin";
+
+  const groups = {};
+  students.forEach((u) => {
+    if (!groups[u.roomNumber]) groups[u.roomNumber] = [];
+    groups[u.roomNumber].push(u);
+  });
+
+  const sortedRooms = Object.keys(groups).sort((a, b) => a.localeCompare(b, "en", { numeric: true }));
+
+  let html = "";
+  sortedRooms.forEach((room) => {
+    html += `<div class="room-group">
+      <div class="room-group-title">রুম ${escapeHtml(room)}</div>
+      <table class="data-table">
+        <tbody>
+          ${groups[room]
+            .map(
+              (u) => `
+            <tr>
+              <td>${escapeHtml(u.name)}</td>
+              <td>${escapeHtml(u.username)}</td>
+              <td><span class="pill pill-approved">অ্যাপ্রুভড</span></td>
+              <td style="display:flex; gap:8px; flex-wrap:wrap;">
+                ${isMainAdmin ? `<button class="btn btn-outline btn-sm" data-promote="${u.id}">সাব-অ্যাডমিন বানাও</button>` : ""}
+                <button class="btn btn-danger btn-sm" data-delete="${u.id}">ডিলিট</button>
+              </td>
+            </tr>`
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>`;
+  });
+
+  approvedList.innerHTML = html;
+
+  approvedList.querySelectorAll("[data-promote]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!confirm("এই স্টুডেন্টকে সাব-অ্যাডমিন বানাতে চাও? সে অ্যাডমিন প্যানেল অ্যাক্সেস পাবে।")) return;
+      try {
+        await updateDoc(doc(db, "users", btn.dataset.promote), { role: "subadmin" });
+      } catch (err) {
+        console.error(err);
+        alert("সমস্যা হয়েছে, আবার চেষ্টা করো।");
+      }
+    });
+  });
+
+  approvedList.querySelectorAll("[data-delete]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!confirm("এই ইউজারকে ডিলিট করতে চান? এই অ্যাকশন ফেরানো যাবে না।")) return;
+      try {
+        await deleteDoc(doc(db, "users", btn.dataset.delete));
+      } catch (err) {
+        console.error(err);
+        alert("ডিলিট করতে সমস্যা হয়েছে।");
+      }
     });
   });
 }
