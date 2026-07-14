@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>হোম — GTEC Boys Hostel</title>
+<meta name="theme-color" content="#1e3a5f" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+
+<div id="loadingScreen" class="state-screen">
+  <div class="spinner" style="display:inline-block; border-top-color:var(--color-primary); border-color:rgba(30,58,95,0.2); border-top-color:var(--color-primary); width:28px; height:28px;"></div>
+</div>
+
+<div id="appShell" style="display:none; padding:20px 16px; max-width:480px; margin:0 auto;">
+  <div class="brand">
+    <div class="brand-mark">G</div>
+    <div>
+      <div class="brand-name">GTEC Boys Hostel</div>
+      <div class="brand-sub" id="welcomeText">স্বাগতম</div>
+    </div>
+  </div>
+
+  <div class="card" style="text-align:center;">
+    <p style="margin-bottom:14px;">আজকের মিল স্ট্যাটাস</p>
+    <div class="status-badge status-off" id="statusBadge">
+      <span class="dot"></span>
+      <span id="statusText">লোড হচ্ছে...</span>
+    </div>
+  </div>
+
+  <p style="text-align:center; margin-top:20px; font-size:13px;">
+    মিল টগল করার ফিচার পরের ধাপে যোগ হবে।
+  </p>
+
+  <button class="btn btn-outline" id="logoutBtn" style="margin-top:24px;">লগআউট</button>
+</div>
+
+<script type="module">
+  import { auth, db } from "../js/firebase-config.js";
+  import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+  import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+  const loadingScreen = document.getElementById("loadingScreen");
+  const appShell = document.getElementById("appShell");
+
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) {
+      window.location.href = "../index.html";
+      return;
+    }
+
+    const snap = await getDoc(doc(db, "users", user.uid));
+    if (!snap.exists()) {
+      window.location.href = "../index.html";
+      return;
+    }
+
+    const data = snap.data();
+
+    if (data.status !== "approved") {
+      window.location.href = "../pending.html";
+      return;
+    }
+    if (data.role === "mainadmin" || data.role === "subadmin") {
+      window.location.href = "../admin/dashboard.html";
+      return;
+    }
+
+    document.getElementById("welcomeText").textContent = `${data.name} · রুম ${data.roomNumber}`;
+    document.getElementById("statusText").textContent = "অফ (ডিফল্ট)";
+
+    loadingScreen.style.display = "none";
+    appShell.style.display = "block";
+  });
+
+  document.getElementById("logoutBtn").addEventListener("click", async () => {
+    await signOut(auth);
+    window.location.href = "../index.html";
+  });
+</script>
+</body>
+</html>
