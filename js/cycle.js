@@ -22,7 +22,7 @@ export async function getActiveCycle() {
 }
 
 // নতুন সাইকেল শুরু করা (অ্যাডমিন করবে) — আগেরটা থাকলে সেটা inactive/archived করে দেবে
-export async function startNewCycle({ startDate, mealsPerDay }) {
+export async function startNewCycle({ startDate, mealsPerDay, lengthDays }) {
   const existing = await getActiveCycle();
   if (existing) {
     await updateDoc(doc(db, "cycles", existing.id), {
@@ -35,6 +35,7 @@ export async function startNewCycle({ startDate, mealsPerDay }) {
   const cycleId = startDate; // যেমন "2026-07-14" — সহজে চেনার জন্য
   await setDoc(doc(db, "cycles", cycleId), {
     startDate,
+    lengthDays: lengthDays || 30,
     mealsPerDay: mealsPerDay || ["lunch", "dinner"],
     defaultMealValue: { lunch: 1, dinner: 1 },
     isActive: true,

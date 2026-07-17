@@ -64,6 +64,66 @@
     text-align: left !important;
     color: var(--color-primary);
   }
+  td.future-col, th.future-col {
+    background: #fafbfc;
+    color: var(--color-text-muted);
+  }
+  tr.daily-total-row td {
+    background: var(--color-primary-light);
+    font-weight: 700;
+    color: var(--color-primary);
+  }
+  td.daily-total-cell {
+    background: var(--color-primary-light);
+    font-weight: 700;
+    color: var(--color-primary);
+  }
+  td[data-uid] {
+    cursor: pointer;
+  }
+  td[data-uid]:hover {
+    outline: 2px solid var(--color-primary);
+    outline-offset: -2px;
+  }
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(20, 25, 35, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+    padding: 20px;
+  }
+  .modal-box {
+    background: #fff;
+    border-radius: var(--radius-lg);
+    padding: 22px;
+    width: 100%;
+    max-width: 340px;
+  }
+  .modal-box .option-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+  .modal-box .option-btn {
+    padding: 12px 8px;
+    text-align: center;
+    border: 1.5px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: #fff;
+    font-family: var(--font-body);
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    cursor: pointer;
+  }
+  .modal-box .option-btn.selected {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+    color: #fff;
+  }
 </style>
 </head>
 <body>
@@ -90,10 +150,12 @@
     </div>
     <div id="sheetContainer" class="sheet-wrap"></div>
     <p style="font-size:12px; margin-top:10px;">
-      লা = লাঞ্চ, ডি = ডিনার, উভ = লাঞ্চ+ডিনার, - = অফ। Extra Lunch = (Total Lunch − Total Dinner) × ০.৫ (নেগেটিভ হলে ০)।
+      লা = লাঞ্চ, ডি = ডিনার, উভ = লাঞ্চ+ডিনার, - = অফ। Extra Lunch = (Total Lunch − Total Dinner) × ০.৫ (নেগেটিভ হলে ০)। হালকা রঙের কলামগুলো ভবিষ্যতের তারিখ (এখনো ফাইনাল না)। যেকোনো সেলে ক্লিক করে পরিবর্তন করা যাবে — ইউজার নোটিফিকেশন পাবে।
     </p>
   </div>
 </div>
+
+<div id="editModal"></div>
 
 <script type="module" src="../js/sheet.js"></script>
 </body>

@@ -64,5 +64,12 @@ service cloud.firestore {
     }
 
     // বাকি কালেকশন (reports, polls, guestMeals ইত্যাদি) rules পরের ধাপে যোগ হবে
+    match /notifications/{userId}/items/{notifId} {
+      // নিজের নোটিফিকেশন নিজে পড়তে/মার্ক-রিড করতে পারবে, অ্যাডমিন সবারটা পড়তে পারবে
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow update: if isSignedIn() && request.auth.uid == userId;
+      // অ্যাডমিন যেকোনো ইউজারকে নোটিফিকেশন পাঠাতে পারবে (ওভাররাইট এলার্ট ইত্যাদি)
+      allow create: if isAdmin();
+    }
   }
 }

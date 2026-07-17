@@ -25,12 +25,20 @@ const todayLabel = document.getElementById("todayLabel");
 const noCycleMsg = document.getElementById("noCycleMsg");
 const calendarSection = document.getElementById("calendarSection");
 const dayList = document.getElementById("dayList");
+const editModeBtn = document.getElementById("editModeBtn");
+const editBar = document.getElementById("editBar");
+const viewHint = document.getElementById("viewHint");
+const cancelEditBtn = document.getElementById("cancelEditBtn");
+const saveEditBtn = document.getElementById("saveEditBtn");
+const confirmModal = document.getElementById("confirmModal");
 
 const DAYS_AHEAD = 14;
 
 let currentUid = null;
 let cycle = null;
-let entriesMap = {};
+let savedEntriesMap = {}; // Firestore থেকে লোড হওয়া, শেষ সেভ করা অবস্থা
+let workingEntriesMap = {}; // এডিট মোডে ইউজার যা পরিবর্তন করছে (লোকাল, সেভের আগ পর্যন্ত)
+let isEditMode = false;
 
 onAuthStateChanged(auth, async (user) => {
   if (!user) {
@@ -90,17 +98,18 @@ async function loadMyEntries() {
 
   if (!snap.exists()) {
     await setDoc(ref, { entries: {} });
-    entriesMap = {};
+    savedEntriesMap = {};
   } else {
-    entriesMap = snap.data().entries || {};
+    savedEntriesMap = snap.data().entries || {};
   }
+  workingEntriesMap = { ...savedEntriesMap };
 }
 
 function renderTodayStatus() {
   const today = bdToday();
   todayLabel.textContent = `আজকের মিল · ${formatBanglaDateShort(today)}`;
 
-  const resolved = resolveSelection(entriesMap, today, cycle.startDate);
+  const resolved = resolveSelection(savedEntriesMap, today, cycle.startDate);
   const isOff = resolved.value === "off";
 
   statusBadge.classList.toggle("status-on", !isOff);
@@ -108,61 +117,158 @@ function renderTodayStatus() {
   statusText.textContent = MEAL_LABELS[resolved.value] + (resolved.isCarried ? " (অটো)" : "");
 }
 
+// ---------- ভিউ/এডিট মোড টগল ----------
+editModeBtn.addEventListener("click", () => {
+  isEditMode = true;
+  workingEntriesMap = { ...savedEntriesMap };
+  editModeBtn.style.display = "none";
+  editBar.style.display = "flex";
+  viewHint.style.display = "none";
+  renderCalendar();
+});
+
+cancelEditBtn.addEventListener("click", () => {
+  isEditMode = false;
+  workingEntriesMap = { ...savedEntriesMap };
+  editModeBtn.style.display = "inline-flex";
+  editBar.style.display = "none";
+  viewHint.style.display = "block";
+  renderCalendar();
+});
+
+saveEditBtn.addEventListener("click", () => {
+  const today = bdToday();
+  const changedDates = [];
+
+  for (let i = 1; i <= DAYS_AHEAD; i++) {
+    const dateStr = addDays(today, i);
+    const oldResolved = resolveSelection(savedEntriesMap, dateStr, cycle.startDate).value;
+    const newResolved = resolveSelection(workingEntriesMap, dateStr, cycle.startDate).value;
+    if (oldResolved !== newResolved) {
+      changedDates.push({ dateStr, oldValue: oldResolved, newValue: newResolved });
+    }
+  }
+
+  if (changedDates.length === 0) {
+    alert("কোনো পরিবর্তন করা হয়নি।");
+    return;
+  }
+
+  showConfirmModal(changedDates);
+});
+
+function showConfirmModal(changedDates) {
+  const rows = changedDates
+    .map(
+      (c) => `
+      <div class="diff-row">
+        <span>${formatBanglaDateFull(c.dateStr)}</span>
+        <span>${MEAL_LABELS[c.oldValue]} → <strong>${MEAL_LABELS[c.newValue]}</strong></span>
+      </div>`
+    )
+    .join("");
+
+  confirmModal.innerHTML = `
+    <div class="modal-backdrop">
+      <div class="modal-box">
+        <h3 style="margin-bottom:4px;">পরিবর্তন কনফার্ম করো</h3>
+        <p style="margin-bottom:10px;">${changedDates.length}টা দিনের মিল পরিবর্তন হবে —</p>
+        ${rows}
+        <div class="modal-actions">
+          <button class="btn btn-outline" id="modalCancel">বাতিল করো</button>
+          <button class="btn btn-primary" id="modalConfirm">কনফার্ম করো</button>
+        </div>
+      </div>
+    </div>`;
+
+  document.getElementById("modalCancel").addEventListener("click", () => {
+    confirmModal.innerHTML = "";
+  });
+  document.getElementById("modalConfirm").addEventListener("click", () => applyChanges(changedDates));
+}
+
+async function applyChanges(changedDates) {
+  const btn = document.getElementById("modalConfirm");
+  btn.disabled = true;
+  btn.textContent = "সেভ হচ্ছে...";
+
+  try {
+    const updatePayload = {};
+    changedDates.forEach((c) => {
+      updatePayload[`entries.${c.dateStr}`] = c.newValue;
+      savedEntriesMap[c.dateStr] = c.newValue;
+    });
+
+    const ref = doc(db, "cycles", cycle.id, "mealEntries", currentUid);
+    await updateDoc(ref, updatePayload);
+
+    confirmModal.innerHTML = "";
+    isEditMode = false;
+    workingEntriesMap = { ...savedEntriesMap };
+    editModeBtn.style.display = "inline-flex";
+    editBar.style.display = "none";
+    viewHint.style.display = "block";
+    renderTodayStatus();
+    renderCalendar();
+  } catch (err) {
+    console.error(err);
+    alert("সেভ করতে সমস্যা হয়েছে, আবার চেষ্টা করো।");
+    btn.disabled = false;
+    btn.textContent = "কনফার্ম করো";
+  }
+}
+
+// ---------- ক্যালেন্ডার রেন্ডার (ভিউ বা এডিট মোড অনুযায়ী) ----------
 function renderCalendar() {
   const today = bdToday();
+  const activeMap = isEditMode ? workingEntriesMap : savedEntriesMap;
   let html = "";
 
   for (let i = 1; i <= DAYS_AHEAD; i++) {
     const dateStr = addDays(today, i);
-    const resolved = resolveSelection(entriesMap, dateStr, cycle.startDate);
-    const editable = isEditableDate(dateStr); // ভবিষ্যতের তারিখ, সবসময় true এখানে যেহেতু i>=1
+    const resolved = resolveSelection(activeMap, dateStr, cycle.startDate);
 
-    html += `
-      <div class="day-card">
-        <div class="day-card-head">
-          <span class="day-card-date">${formatBanglaDateFull(dateStr)}</span>
-          ${resolved.isCarried ? '<span class="carried-tag">অটো-ক্যারি</span>' : ""}
-        </div>
-        <div class="option-grid" data-date="${dateStr}">
-          ${["lunch", "dinner", "both", "off"]
-            .map(
-              (opt) => `
-            <button type="button" class="option-btn ${resolved.value === opt ? "selected" : ""}"
-              data-date="${dateStr}" data-value="${opt}">
-              ${MEAL_LABELS[opt]}
-            </button>`
-            )
-            .join("")}
-        </div>
-      </div>`;
+    if (isEditMode) {
+      html += `
+        <div class="day-card">
+          <div class="day-card-head">
+            <span class="day-card-date">${formatBanglaDateFull(dateStr)}</span>
+            ${resolved.isCarried ? '<span class="carried-tag">অটো-ক্যারি</span>' : ""}
+          </div>
+          <div class="option-grid" data-date="${dateStr}">
+            ${["lunch", "dinner", "both", "off"]
+              .map(
+                (opt) => `
+              <button type="button" class="option-btn ${resolved.value === opt ? "selected" : ""}"
+                data-date="${dateStr}" data-value="${opt}">
+                ${MEAL_LABELS[opt]}
+              </button>`
+              )
+              .join("")}
+          </div>
+        </div>`;
+    } else {
+      html += `
+        <div class="day-card">
+          <div class="day-card-head" style="margin-bottom:0;">
+            <span class="day-card-date">${formatBanglaDateFull(dateStr)}</span>
+            <span>
+              ${resolved.isCarried ? '<span class="carried-tag">অটো-ক্যারি</span>' : ""}
+              <span class="view-tag">${MEAL_LABELS[resolved.value]}</span>
+            </span>
+          </div>
+        </div>`;
+    }
   }
 
   dayList.innerHTML = html;
 
-  dayList.querySelectorAll(".option-btn").forEach((btn) => {
-    btn.addEventListener("click", () => handleSelect(btn.dataset.date, btn.dataset.value));
-  });
-}
-
-async function handleSelect(dateStr, value) {
-  if (!isEditableDate(dateStr)) {
-    alert("এই তারিখের মিল আর পরিবর্তন করা যাবে না, কাটঅফ টাইম পার হয়ে গেছে।");
-    renderCalendar();
-    return;
-  }
-
-  // optimistic UI update
-  entriesMap[dateStr] = value;
-  renderCalendar();
-  if (dateStr === bdToday()) renderTodayStatus();
-
-  try {
-    const ref = doc(db, "cycles", cycle.id, "mealEntries", currentUid);
-    await updateDoc(ref, { [`entries.${dateStr}`]: value });
-  } catch (err) {
-    console.error(err);
-    alert("সেভ করতে সমস্যা হয়েছে, আবার চেষ্টা করো।");
-    await loadMyEntries();
-    renderCalendar();
+  if (isEditMode) {
+    dayList.querySelectorAll(".option-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        workingEntriesMap[btn.dataset.date] = btn.dataset.value;
+        renderCalendar();
+      });
+    });
   }
 }

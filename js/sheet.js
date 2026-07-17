@@ -4,9 +4,12 @@ import {
   doc,
   getDoc,
   getDocs,
+  updateDoc,
+  addDoc,
   collection,
   query,
   where,
+  serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getActiveCycle } from "./cycle.js";
 import {
@@ -16,13 +19,21 @@ import {
   formatBanglaDateFull,
   resolveSelection,
   MEAL_SHORT,
+  MEAL_LABELS,
 } from "./dateutils.js";
+
+const CYCLE_LENGTH_DAYS = 30; // পুরা মাসের কলাম আগে থেকেই দেখানোর জন্য
 
 const loadingScreen = document.getElementById("loadingScreen");
 const appShell = document.getElementById("appShell");
 const cycleLabel = document.getElementById("cycleLabel");
 const noCycleMsg = document.getElementById("noCycleMsg");
 const sheetContainer = document.getElementById("sheetContainer");
+const editModal = document.getElementById("editModal");
+
+let activeCycle = null;
+let studentsCache = [];
+let entriesByUser = {};
 
 onAuthStateChanged(auth, async (user) => {
   if (!user) {
@@ -50,6 +61,7 @@ onAuthStateChanged(auth, async (user) => {
 
 async function buildSheet() {
   const cycle = await getActiveCycle();
+  activeCycle = cycle;
 
   if (!cycle) {
     noCycleMsg.style.display = "block";
@@ -59,16 +71,11 @@ async function buildSheet() {
 
   cycleLabel.textContent = `${formatBanglaDateFull(cycle.startDate)} থেকে চলমান`;
 
-  // তারিখের রেঞ্জ: সাইকেল শুরু থেকে আজ পর্যন্ত
-  const today = bdToday();
   const dates = [];
-  let d = cycle.startDate;
-  while (d <= today) {
-    dates.push(d);
-    d = addDays(d, 1);
+  for (let i = 0; i < CYCLE_LENGTH_DAYS; i++) {
+    dates.push(addDays(cycle.startDate, i));
   }
 
-  // অ্যাপ্রুভড স্টুডেন্ট লিস্ট
   const usersQ = query(
     collection(db, "users"),
     where("status", "==", "approved"),
@@ -82,10 +89,10 @@ async function buildSheet() {
     if (a.roomNumber !== b.roomNumber) return a.roomNumber.localeCompare(b.roomNumber, "en", { numeric: true });
     return a.name.localeCompare(b.name, "bn");
   });
+  studentsCache = students;
 
-  // এই সাইকেলের সব মিল-এন্ট্রি একবারে টেনে আনা (পুরো সাবকালেকশন — প্রতি ইউজার ১টা ডকুমেন্ট)
   const entriesSnap = await getDocs(collection(db, "cycles", cycle.id, "mealEntries"));
-  const entriesByUser = {};
+  entriesByUser = {};
   entriesSnap.forEach((docSnap) => {
     entriesByUser[docSnap.id] = docSnap.data().entries || {};
   });
@@ -99,15 +106,37 @@ function renderTable(students, dates, entriesByUser, cycleStartDate) {
     return;
   }
 
+  const today = bdToday();
+
   let headerCells = `<th class="name-col">নাম</th><th>রুম</th>
     <th>Total<br/>Lunch</th><th>Total<br/>Dinner</th><th>Extra<br/>Lunch</th><th>Total<br/>Meal</th>`;
   dates.forEach((d) => {
-    headerCells += `<th>${formatDateColumnLabel(d)}</th>`;
+    const isFuture = d > today;
+    headerCells += `<th class="${isFuture ? "future-col" : ""}">${formatDateColumnLabel(d)}</th>`;
   });
 
-  let bodyRows = "";
-  let lastRoom = null;
+  // ---------- প্রতিদিন মোট লাঞ্চ/ডিনার (রাধুনির জন্য) ----------
+  const dailyLunchCount = {};
+  const dailyDinnerCount = {};
+  dates.forEach((d) => {
+    dailyLunchCount[d] = 0;
+    dailyDinnerCount[d] = 0;
+  });
 
+  students.forEach((student) => {
+    const entries = entriesByUser[student.id] || {};
+    dates.forEach((dateStr) => {
+      const val = resolveSelection(entries, dateStr, cycleStartDate).value;
+      if (val === "lunch" || val === "both") dailyLunchCount[dateStr]++;
+      if (val === "dinner" || val === "both") dailyDinnerCount[dateStr]++;
+    });
+  });
+
+  const lunchRow = dates.map((d) => `<td class="daily-total-cell">${dailyLunchCount[d]}</td>`).join("");
+  const dinnerRow = dates.map((d) => `<td class="daily-total-cell">${dailyDinnerCount[d]}</td>`).join("");
+
+  // ---------- প্রতি স্টুডেন্টের রো ----------
+  let bodyRows = "";
   students.forEach((student) => {
     const entries = entriesByUser[student.id] || {};
 
@@ -117,10 +146,14 @@ function renderTable(students, dates, entriesByUser, cycleStartDate) {
       .map((dateStr) => {
         const resolved = resolveSelection(entries, dateStr, cycleStartDate);
         const val = resolved.value;
-        if (val === "lunch" || val === "both") totalLunch++;
-        if (val === "dinner" || val === "both") totalDinner++;
-        const cls = val === "off" ? "off-cell" : "on-cell";
-        return `<td class="${cls}">${MEAL_SHORT[val]}</td>`;
+        const isFuture = dateStr > today;
+        if (!isFuture) {
+          // সামারি (বিলিং) হিসাব শুধু আজ পর্যন্ত ফাইনাল দিনগুলো দিয়ে হবে
+          if (val === "lunch" || val === "both") totalLunch++;
+          if (val === "dinner" || val === "both") totalDinner++;
+        }
+        const cls = (val === "off" ? "off-cell" : "on-cell") + (isFuture ? " future-col" : "");
+        return `<td class="${cls}" data-uid="${student.id}" data-date="${dateStr}" data-current="${val}" data-name="${escapeHtml(student.name)}">${MEAL_SHORT[val]}</td>`;
       })
       .join("");
 
@@ -141,9 +174,87 @@ function renderTable(students, dates, entriesByUser, cycleStartDate) {
 
   sheetContainer.innerHTML = `
     <table class="sheet-table">
-      <thead><tr>${headerCells}</tr></thead>
+      <thead>
+        <tr>${headerCells}</tr>
+        <tr class="daily-total-row">
+          <td class="name-col" colspan="6">প্রতিদিন মোট লাঞ্চ</td>
+          ${lunchRow}
+        </tr>
+        <tr class="daily-total-row">
+          <td class="name-col" colspan="6">প্রতিদিন মোট ডিনার</td>
+          ${dinnerRow}
+        </tr>
+      </thead>
       <tbody>${bodyRows}</tbody>
     </table>`;
+
+  sheetContainer.querySelectorAll("td[data-uid]").forEach((td) => {
+    td.addEventListener("click", () => openEditModal(td.dataset));
+  });
+}
+
+// ---------- এডিট মোডাল (অ্যাডমিন ওভাররাইট) ----------
+function openEditModal({ uid, date, current, name }) {
+  editModal.innerHTML = `
+    <div class="modal-backdrop">
+      <div class="modal-box">
+        <h3 style="margin-bottom:4px;">${name}</h3>
+        <p style="margin-bottom:14px;">${formatBanglaDateFull(date)} — এই দিনের মিল পরিবর্তন করো</p>
+        <div class="option-grid">
+          ${["lunch", "dinner", "both", "off"]
+            .map(
+              (opt) => `
+            <button type="button" class="option-btn ${current === opt ? "selected" : ""}" data-value="${opt}">
+              ${MEAL_LABELS[opt]}
+            </button>`
+            )
+            .join("")}
+        </div>
+        <button class="btn btn-outline btn-sm" id="modalCancelBtn" style="margin-top:16px; width:100%;">বাতিল করো</button>
+      </div>
+    </div>`;
+
+  editModal.querySelectorAll(".option-btn").forEach((btn) => {
+    btn.addEventListener("click", () => saveOverride(uid, date, btn.dataset.value, current, name));
+  });
+  editModal.querySelector("#modalCancelBtn").addEventListener("click", closeModal);
+}
+
+function closeModal() {
+  editModal.innerHTML = "";
+}
+
+async function saveOverride(uid, date, newValue, oldValue, name) {
+  if (newValue === oldValue) {
+    closeModal();
+    return;
+  }
+  if (!confirm(`${name}-এর ${formatBanglaDateFull(date)} তারিখের মিল "${MEAL_LABELS[newValue]}" করতে চাও?`)) {
+    return;
+  }
+
+  try {
+    await updateDoc(doc(db, "cycles", activeCycle.id, "mealEntries", uid), {
+      [`entries.${date}`]: newValue,
+    });
+
+    await addDoc(collection(db, "notifications", uid, "items"), {
+      type: "override",
+      message: `তোমার ${formatBanglaDateFull(date)} তারিখের মিল অ্যাডমিন পরিবর্তন করে "${MEAL_LABELS[newValue]}" করেছে।`,
+      isRead: false,
+      createdAt: serverTimestamp(),
+    });
+
+    closeModal();
+    entriesByUser[uid] = entriesByUser[uid] || {};
+    entriesByUser[uid][date] = newValue;
+    const dates = [];
+    for (let i = 0; i < CYCLE_LENGTH_DAYS; i++) dates.push(addDays(activeCycle.startDate, i));
+    renderTable(studentsCache, dates, entriesByUser, activeCycle.startDate);
+  } catch (err) {
+    console.error(err);
+    alert("পরিবর্তন করতে সমস্যা হয়েছে, আবার চেষ্টা করো।");
+  }
 }
 
 function escapeHtml(str) {
