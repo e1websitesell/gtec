@@ -24,16 +24,18 @@ import {
 
 const CYCLE_LENGTH_DAYS = 30; // পুরা মাসের কলাম আগে থেকেই দেখানোর জন্য
 
+const KEY_MAP = { l: "lunch", d: "dinner", b: "both", o: "off" };
+
 const loadingScreen = document.getElementById("loadingScreen");
 const appShell = document.getElementById("appShell");
 const cycleLabel = document.getElementById("cycleLabel");
 const noCycleMsg = document.getElementById("noCycleMsg");
 const sheetContainer = document.getElementById("sheetContainer");
-const editModal = document.getElementById("editModal");
 
 let activeCycle = null;
 let studentsCache = [];
 let entriesByUser = {};
+let selectedCell = null; // বর্তমানে সিলেক্ট করা <td>
 
 onAuthStateChanged(auth, async (user) => {
   if (!user) {
@@ -71,11 +73,6 @@ async function buildSheet() {
 
   cycleLabel.textContent = `${formatBanglaDateFull(cycle.startDate)} থেকে চলমান`;
 
-  const dates = [];
-  for (let i = 0; i < CYCLE_LENGTH_DAYS; i++) {
-    dates.push(addDays(cycle.startDate, i));
-  }
-
   const usersQ = query(
     collection(db, "users"),
     where("status", "==", "approved"),
@@ -97,10 +94,22 @@ async function buildSheet() {
     entriesByUser[docSnap.id] = docSnap.data().entries || {};
   });
 
-  renderTable(students, dates, entriesByUser, cycle.startDate);
+  renderTable();
 }
 
-function renderTable(students, dates, entriesByUser, cycleStartDate) {
+function getDateRange() {
+  const dates = [];
+  for (let i = 0; i < CYCLE_LENGTH_DAYS; i++) {
+    dates.push(addDays(activeCycle.startDate, i));
+  }
+  return dates;
+}
+
+function renderTable() {
+  const students = studentsCache;
+  const dates = getDateRange();
+  const cycleStartDate = activeCycle.startDate;
+
   if (students.length === 0) {
     sheetContainer.innerHTML = `<div class="empty-state">এখনো কোনো অ্যাপ্রুভড স্টুডেন্ট নেই।</div>`;
     return;
@@ -148,12 +157,11 @@ function renderTable(students, dates, entriesByUser, cycleStartDate) {
         const val = resolved.value;
         const isFuture = dateStr > today;
         if (!isFuture) {
-          // সামারি (বিলিং) হিসাব শুধু আজ পর্যন্ত ফাইনাল দিনগুলো দিয়ে হবে
-          if (val === "lunch" || val === "both") totalLunch++;
-          if (val === "dinner" || val === "both") totalDinner++;
+          totalLunch += val === "lunch" || val === "both" ? 1 : 0;
+          totalDinner += val === "dinner" || val === "both" ? 1 : 0;
         }
         const cls = (val === "off" ? "off-cell" : "on-cell") + (isFuture ? " future-col" : "");
-        return `<td class="${cls}" data-uid="${student.id}" data-date="${dateStr}" data-current="${val}" data-name="${escapeHtml(student.name)}">${MEAL_SHORT[val]}</td>`;
+        return `<td class="${cls}" tabindex="0" data-uid="${student.id}" data-date="${dateStr}" data-value="${val}">${MEAL_SHORT[val]}</td>`;
       })
       .join("");
 
@@ -189,54 +197,71 @@ function renderTable(students, dates, entriesByUser, cycleStartDate) {
     </table>`;
 
   sheetContainer.querySelectorAll("td[data-uid]").forEach((td) => {
-    td.addEventListener("click", () => openEditModal(td.dataset));
+    td.addEventListener("click", () => selectCell(td));
   });
+
+  selectedCell = null;
 }
 
-// ---------- এডিট মোডাল (অ্যাডমিন ওভাররাইট) ----------
-function openEditModal({ uid, date, current, name }) {
-  editModal.innerHTML = `
-    <div class="modal-backdrop">
-      <div class="modal-box">
-        <h3 style="margin-bottom:4px;">${name}</h3>
-        <p style="margin-bottom:14px;">${formatBanglaDateFull(date)} — এই দিনের মিল পরিবর্তন করো</p>
-        <div class="option-grid">
-          ${["lunch", "dinner", "both", "off"]
-            .map(
-              (opt) => `
-            <button type="button" class="option-btn ${current === opt ? "selected" : ""}" data-value="${opt}">
-              ${MEAL_LABELS[opt]}
-            </button>`
-            )
-            .join("")}
-        </div>
-        <button class="btn btn-outline btn-sm" id="modalCancelBtn" style="margin-top:16px; width:100%;">বাতিল করো</button>
-      </div>
-    </div>`;
-
-  editModal.querySelectorAll(".option-btn").forEach((btn) => {
-    btn.addEventListener("click", () => saveOverride(uid, date, btn.dataset.value, current, name));
-  });
-  editModal.querySelector("#modalCancelBtn").addEventListener("click", closeModal);
+// ---------- সেল সিলেক্ট করা (হাইলাইট) ----------
+function selectCell(td) {
+  if (selectedCell) selectedCell.classList.remove("cell-selected");
+  selectedCell = td;
+  td.classList.add("cell-selected");
 }
 
-function closeModal() {
-  editModal.innerHTML = "";
-}
+// ---------- কীবোর্ড শর্টকাট: L/D/B/O চাপলে সাথে সাথে সেভ ----------
+document.addEventListener("keydown", async (e) => {
+  if (!selectedCell) return;
 
-async function saveOverride(uid, date, newValue, oldValue, name) {
-  if (newValue === oldValue) {
-    closeModal();
+  const key = e.key.toLowerCase();
+
+  if (key === "escape") {
+    selectedCell.classList.remove("cell-selected");
+    selectedCell = null;
     return;
   }
-  if (!confirm(`${name}-এর ${formatBanglaDateFull(date)} তারিখের মিল "${MEAL_LABELS[newValue]}" করতে চাও?`)) {
-    return;
+
+  const newValue = KEY_MAP[key];
+  if (!newValue) return;
+
+  const { uid, date } = selectedCell.dataset;
+  const oldValue = selectedCell.dataset.value;
+  if (newValue === oldValue) return; // কোনো পরিবর্তন নেই
+
+  await applyOverride(uid, date, newValue, selectedCell);
+});
+
+// ---------- ওভাররাইট সেভ করা — শুধু এই তারিখটাই বদলাবে, ক্যাসকেড আটকাতে পরের auto-carry দিনগুলো ফ্রিজ করে দেয়া হয় ----------
+async function applyOverride(uid, date, newValue, td) {
+  td.classList.add("cell-saving");
+
+  const entries = entriesByUser[uid] || {};
+  const cycleEnd = addDays(activeCycle.startDate, CYCLE_LENGTH_DAYS); // exclusive
+
+  // এই তারিখের পরের যেসব দিনে কোনো এক্সপ্লিসিট এন্ট্রি নেই (মানে carry-forward এর উপর নির্ভরশীল),
+  // সেগুলোর বর্তমান (পুরনো ভ্যালু দিয়ে হিসাব করা) মান ফ্রিজ করে রাখা হচ্ছে যাতে এই একটা পরিবর্তনে তারা না বদলে যায়
+  const keysAfter = Object.keys(entries)
+    .filter((k) => k > date)
+    .sort();
+  const nextExplicitDate = keysAfter.length > 0 ? keysAfter[0] : cycleEnd;
+
+  const updatePayload = {};
+  let d = addDays(date, 1);
+  while (d < nextExplicitDate) {
+    if (!entries[d]) {
+      const frozenVal = resolveSelection(entries, d, activeCycle.startDate).value;
+      updatePayload[`entries.${d}`] = frozenVal;
+      entries[d] = frozenVal;
+    }
+    d = addDays(d, 1);
   }
+
+  updatePayload[`entries.${date}`] = newValue;
+  entries[date] = newValue;
 
   try {
-    await updateDoc(doc(db, "cycles", activeCycle.id, "mealEntries", uid), {
-      [`entries.${date}`]: newValue,
-    });
+    await updateDoc(doc(db, "cycles", activeCycle.id, "mealEntries", uid), updatePayload);
 
     await addDoc(collection(db, "notifications", uid, "items"), {
       type: "override",
@@ -245,15 +270,21 @@ async function saveOverride(uid, date, newValue, oldValue, name) {
       createdAt: serverTimestamp(),
     });
 
-    closeModal();
-    entriesByUser[uid] = entriesByUser[uid] || {};
-    entriesByUser[uid][date] = newValue;
-    const dates = [];
-    for (let i = 0; i < CYCLE_LENGTH_DAYS; i++) dates.push(addDays(activeCycle.startDate, i));
-    renderTable(studentsCache, dates, entriesByUser, activeCycle.startDate);
+    entriesByUser[uid] = entries;
+    td.dataset.value = newValue;
+    td.textContent = MEAL_SHORT[newValue];
+    td.classList.remove("off-cell", "on-cell");
+    td.classList.add(newValue === "off" ? "off-cell" : "on-cell");
+    td.classList.remove("cell-saving");
+
+    // সামারি কলাম ও ডেইলি টোটাল রো আপডেট করতে পুরো টেবিল রিফ্রেশ করা (হালকা অপারেশন, নেটওয়ার্ক কল লাগে না)
+    const scrollLeft = sheetContainer.scrollLeft;
+    renderTable();
+    sheetContainer.scrollLeft = scrollLeft;
   } catch (err) {
     console.error(err);
-    alert("পরিবর্তন করতে সমস্যা হয়েছে, আবার চেষ্টা করো।");
+    td.classList.remove("cell-saving");
+    alert("পরিবর্তন সেভ করতে সমস্যা হয়েছে, আবার চেষ্টা করো।");
   }
 }
 

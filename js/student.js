@@ -7,6 +7,7 @@ import {
   updateDoc,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getActiveCycle } from "./cycle.js";
+import { addGuestMeal, getGuestMealsForUser } from "./billing.js";
 import {
   bdToday,
   addDays,
@@ -80,10 +81,13 @@ onAuthStateChanged(auth, async (user) => {
 
   noCycleMsg.style.display = "none";
   calendarSection.style.display = "block";
+  document.getElementById("guestSection").style.display = "block";
+  document.getElementById("guestDate").value = bdToday();
 
   await loadMyEntries();
   renderTodayStatus();
   renderCalendar();
+  await loadGuestMeals();
 });
 
 document.getElementById("logoutBtn").addEventListener("click", async (e) => {
@@ -272,3 +276,54 @@ function renderCalendar() {
     });
   }
 }
+
+// ---------- গেস্ট মিল ----------
+async function loadGuestMeals() {
+  const list = await getGuestMealsForUser(cycle.id, currentUid);
+  const guestHistory = document.getElementById("guestHistory");
+
+  if (list.length === 0) {
+    guestHistory.innerHTML = `<div class="empty-state">এখনো কোনো গেস্ট মিল দাওনি।</div>`;
+    return;
+  }
+
+  guestHistory.innerHTML = list
+    .map(
+      (g) => `
+      <div class="day-card" style="display:flex; justify-content:space-between; align-items:center; padding:12px 14px;">
+        <span>${formatBanglaDateFull(g.date)}</span>
+        <span style="font-size:13px; color:var(--color-text-muted);">লাঞ্চ: ${g.lunchCount} · ডিনার: ${g.dinnerCount}</span>
+      </div>`
+    )
+    .join("");
+}
+
+document.getElementById("addGuestBtn").addEventListener("click", async () => {
+  const dateStr = document.getElementById("guestDate").value;
+  const lunchCount = document.getElementById("guestLunch").value;
+  const dinnerCount = document.getElementById("guestDinner").value;
+
+  if (!dateStr) {
+    alert("তারিখ সিলেক্ট করো।");
+    return;
+  }
+  if ((Number(lunchCount) || 0) === 0 && (Number(dinnerCount) || 0) === 0) {
+    alert("কমপক্ষে একটা মিল সংখ্যা দাও।");
+    return;
+  }
+
+  const btn = document.getElementById("addGuestBtn");
+  btn.disabled = true;
+
+  try {
+    await addGuestMeal(cycle.id, currentUid, dateStr, lunchCount, dinnerCount);
+    document.getElementById("guestLunch").value = 0;
+    document.getElementById("guestDinner").value = 0;
+    await loadGuestMeals();
+  } catch (err) {
+    console.error(err);
+    alert("গেস্ট মিল যোগ করতে সমস্যা হয়েছে।");
+  } finally {
+    btn.disabled = false;
+  }
+});

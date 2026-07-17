@@ -182,6 +182,29 @@
     </div>
   </div>
 
+  <!-- ===== গেস্ট মিল ===== -->
+  <div id="guestSection" style="display:none; margin-top:28px;">
+    <h3 style="font-size:15px; margin-bottom:10px;">গেস্ট মিল</h3>
+    <div class="card" style="margin-bottom:14px;">
+      <div class="field">
+        <label>তারিখ</label>
+        <input type="date" id="guestDate" />
+      </div>
+      <div style="display:flex; gap:10px;">
+        <div class="field" style="flex:1;">
+          <label>লাঞ্চ সংখ্যা</label>
+          <input type="number" id="guestLunch" min="0" value="0" />
+        </div>
+        <div class="field" style="flex:1;">
+          <label>ডিনার সংখ্যা</label>
+          <input type="number" id="guestDinner" min="0" value="0" />
+        </div>
+      </div>
+      <button class="btn btn-primary btn-sm" id="addGuestBtn">যোগ করো</button>
+    </div>
+    <div id="guestHistory"></div>
+  </div>
+
   <div class="bottom-nav">
     <a href="home.html">🏠<br/>হোম</a>
     <a href="#" id="logoutBtn">🚪<br/>লগআউট</a>
