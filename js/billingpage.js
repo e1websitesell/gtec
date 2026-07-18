@@ -94,7 +94,13 @@ async function loadAll() {
   specialValuesMap = await getAllSpecialValues(cycle.id);
   guestMeals = await getAllGuestMeals(cycle.id);
   payments = await getAllPayments(cycle.id);
-  finesMap = await getAllFines(cycle.id);
+
+  try {
+    finesMap = await getAllFines(cycle.id);
+  } catch (err) {
+    console.error("Fines load error:", err);
+    finesMap = {};
+  }
 
   document.getElementById("mealRateInput").value = cycle.mealRate || "";
   document.getElementById("fixedCostInput").value = cycle.fixedCostPerHead || "";
@@ -248,9 +254,14 @@ function renderBillingTable() {
     input.addEventListener("change", async () => {
       const uid = input.dataset.uid;
       const amount = parseFloat(input.value) || 0;
-      await setFine(cycle.id, uid, amount, "");
-      finesMap[uid] = { amount, note: "" };
-      renderBillingTable();
+      try {
+        await setFine(cycle.id, uid, amount, "");
+        finesMap[uid] = { amount, note: "" };
+        renderBillingTable();
+      } catch (err) {
+        console.error(err);
+        alert("জরিমানা সেভ করতে সমস্যা হয়েছে — Firestore Rules Publish করা হয়েছে কিনা চেক করো।");
+      }
     });
   });
 }

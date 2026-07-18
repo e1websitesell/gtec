@@ -176,10 +176,17 @@ async function buildSheet() {
 
   specialValuesMap = await getAllSpecialValues(cycle.id);
   guestMeals = await getAllGuestMeals(cycle.id);
-  expensesData = await getOrCreateExpenses(cycle.id);
 
+  // মূল মিল শিট আগেই রেন্ডার করে ফেলছি — নিচের খরচের হিসাব লোড করতে সমস্যা হলেও যেন মূল শিট দেখা যায়
   renderTable();
-  renderExpenseTable();
+
+  try {
+    expensesData = await getOrCreateExpenses(cycle.id);
+    renderExpenseTable();
+  } catch (err) {
+    console.error("Expense data load error:", err);
+    expenseTable.innerHTML = `<tbody><tr><td class="name-col">ব্যয়ের হিসাব লোড করতে সমস্যা হয়েছে। Firestore Rules Publish করা হয়েছে কিনা চেক করো। (${err.message})</td></tr></tbody>`;
+  }
 }
 
 function getFullCycleDates() {
