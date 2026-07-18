@@ -161,11 +161,14 @@
     </div>
     <div class="section-title">
       <span></span>
-      <button class="btn btn-outline btn-sm" id="toggleViewBtn">পুরো মাস দেখাও</button>
+      <div style="display:flex; gap:8px;">
+        <button class="btn btn-outline btn-sm" id="toggleViewBtn">পুরো মাস দেখাও</button>
+        <button class="btn btn-primary btn-sm" id="exportSheetCsvBtn">CSV/এক্সেল ডাউনলোড</button>
+      </div>
     </div>
     <div id="sheetContainer" class="sheet-wrap"></div>
     <p style="font-size:12px; margin-top:10px;">
-      লা = লাঞ্চ, ডি = ডিনার, উভ = লাঞ্চ+ডিনার, - = অফ। Extra Lunch = (Total Lunch − Total Dinner) × ০.৫ (নেগেটিভ হলে ০)। হালকা ধূসর কলাম = ভবিষ্যতের তারিখ। সবুজ কলাম = মাঝারি স্পেশাল ভ্যালু (১-৩), লাল কলাম = বেশি স্পেশাল ভ্যালু (৩+)। ডিফল্টে গত ৭ দিন + আগামী ৫ দিন দেখাচ্ছে, পুরো মাস দেখতে উপরের বাটনে চাপো।
+      লা = লাঞ্চ, ডি = ডিনার, উভ = লাঞ্চ+ডিনার, - = অফ। Extra Lunch = (Total Lunch − Total Dinner) × ০.৫ (নেগেটিভ হলে ০)। হালকা ধূসর কলাম = ভবিষ্যতের তারিখ। সবুজ কলাম = স্পেশাল ভ্যালু (০.৫–৩ এর মধ্যে), লাল কলাম = অস্বাভাবিক বেশি/কম ভ্যালু (৩-এর বেশি বা ০.৫-এর কম)। ডিফল্টে গত ৭ দিন + আগামী ৫ দিন দেখাচ্ছে, পুরো মাস দেখতে বা এক্সপোর্ট করতে উপরের বাটনে চাপো।
     </p>
   </div>
 </div>

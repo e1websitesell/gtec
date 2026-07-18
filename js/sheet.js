@@ -73,6 +73,61 @@ toggleViewBtn.addEventListener("click", () => {
   renderTable();
 });
 
+const exportSheetCsvBtn = document.getElementById("exportSheetCsvBtn");
+if (exportSheetCsvBtn) {
+  exportSheetCsvBtn.addEventListener("click", exportSheetCsv);
+}
+
+function exportSheetCsv() {
+  if (!activeCycle || studentsCache.length === 0) {
+    alert("এক্সপোর্ট করার মতো ডেটা নেই।");
+    return;
+  }
+
+  const dates = getVisibleDates();
+  const cycleStartDate = activeCycle.startDate;
+  const today = bdToday();
+
+  const headers = ["নাম", "রুম", "Total Lunch", "Total Dinner", "Extra Lunch", "Total Meal", ...dates.map((d) => formatDateColumnLabel(d))];
+  const rows = [headers];
+
+  studentsCache.forEach((student) => {
+    const entries = entriesByUser[student.id] || {};
+    let totalLunch = 0;
+    let totalDinner = 0;
+    const cellVals = dates.map((dateStr) => {
+      const val = resolveSelection(entries, dateStr, cycleStartDate).value;
+      if (dateStr <= today) {
+        if (val === "lunch" || val === "both") totalLunch++;
+        if (val === "dinner" || val === "both") totalDinner++;
+      }
+      return MEAL_LABELS[val];
+    });
+    const extraLunch = Math.max(0, (totalLunch - totalDinner) * 0.5);
+    const totalMeal = totalLunch + totalDinner + extraLunch;
+    rows.push([student.name, student.roomNumber, totalLunch, totalDinner, extraLunch, totalMeal, ...cellVals]);
+  });
+
+  const csvContent = rows.map((r) => r.map(csvEscape).join(",")).join("\r\n");
+  const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `meal-sheet-${activeCycle.id}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function csvEscape(val) {
+  const str = String(val);
+  if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
 async function buildSheet() {
   const cycle = await getActiveCycle();
   activeCycle = cycle;
@@ -130,14 +185,15 @@ function getVisibleDates() {
   return all.filter((d) => d >= windowStart && d <= windowEnd);
 }
 
-// একটা তারিখের স্পেশাল ভ্যালু অনুযায়ী কালার ক্লাস — বেশি ভ্যালু = লাল-ঘেঁষা, মাঝারি বেশি = সবুজ
+// একটা তারিখের স্পেশাল ভ্যালু অনুযায়ী কালার ক্লাস — অস্বাভাবিক বেশি/কম হলে লাল, স্বাভাবিক স্পেশাল হলে সবুজ
 function specialColorClass(dateStr) {
   const sv = specialValuesMap[dateStr];
   if (!sv) return "";
-  const maxVal = Math.max(sv.lunchValue, sv.dinnerValue);
-  if (maxVal <= 1) return "";
-  if (maxVal <= 3) return "special-green";
-  return "special-red";
+  const vals = [sv.lunchValue, sv.dinnerValue];
+  const anyDeviation = vals.some((v) => v !== 1);
+  if (!anyDeviation) return "";
+  const extreme = vals.some((v) => v > 3 || v < 0.5);
+  return extreme ? "special-red" : "special-green";
 }
 
 function renderTable() {
