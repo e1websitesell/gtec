@@ -124,6 +124,23 @@
     color: #dc2626 !important;
     font-weight: 700;
   }
+  .expense-input {
+    width: 64px;
+    padding: 4px;
+    border: 1px solid var(--color-border);
+    border-radius: 5px;
+    text-align: center;
+    font-family: var(--font-body);
+    font-size: 12.5px;
+  }
+  td.expense-computed {
+    background: var(--color-primary-light);
+    font-weight: 700;
+  }
+  td.expense-total {
+    background: var(--color-bg);
+    font-weight: 700;
+  }
 </style>
 </head>
 <body>
@@ -168,6 +185,17 @@
     <div id="sheetContainer" class="sheet-wrap"></div>
     <p style="font-size:12px; margin-top:10px;">
       লা = লাঞ্চ, ডি = ডিনার, উভ = লাঞ্চ+ডিনার, - = অফ। Extra Lunch = (Total Lunch − Total Dinner) × ০.৫ (নেগেটিভ হলে ০)। হালকা ধূসর কলাম = ভবিষ্যতের তারিখ। নীল ব্যাকগ্রাউন্ড + লাল লেখা = স্পেশাল ডে (এই তারিখের কলাম দেখতে না পেলে "পুরো মাস দেখাও" চাপো, কারণ ডিফল্টে শুধু গত ৭ দিন + আগামী ৫ দিন দেখানো হয়)।
+    </p>
+
+    <!-- ===== ব্যয়ের হিসাব ===== -->
+    <div class="section-title" style="margin-top:32px;">
+      <h3>ব্যয়ের হিসাব</h3>
+    </div>
+    <div class="sheet-wrap" style="margin-bottom:12px;">
+      <table class="sheet-table" id="expenseTable"></table>
+    </div>
+    <p style="font-size:12px;">
+      মোট বাজার খরচ ও অন্যান্য খরচ প্রতিদিনের ঘরে লিখলেই সেভ হয়ে যাবে। "মিলের বাজার" রো অটোমেটিক ক্যালকুলেট হয় (মোট বাজার − অন্যান্য)। শেষের "এক্সট্রা" কলামটা মাসের ৩১ তারিখের বাইরে ম্যানেজার যেকোনো কাজে ব্যবহার করতে পারবে। ডানদিকে "টোটাল" কলামে পুরো মাসের যোগফল দেখা যাবে।
     </p>
   </div>
 </div>

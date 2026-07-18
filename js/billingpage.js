@@ -2,13 +2,16 @@ import { auth, db } from "./firebase-config.js";
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { doc, getDoc, getDocs, collection, query, where } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getActiveCycle } from "./cycle.js";
-import { bdToday, addDays, formatBanglaDateFull, formatDateColumnLabel } from "./dateutils.js";
+import { bdToday, addDays, formatBanglaDateFull } from "./dateutils.js";
 import {
   getAllSpecialValues,
   setSpecialValue,
   getAllGuestMeals,
   getAllPayments,
   addPayment,
+  getAllFines,
+  setFine,
+  roundBillUp5,
   setBillingConfig,
   computeStudentBilling,
 } from "./billing.js";
@@ -21,7 +24,8 @@ const billingBody = document.getElementById("billingBody");
 const specialList = document.getElementById("specialList");
 const guestMealList = document.getElementById("guestMealList");
 const billingTable = document.getElementById("billingTable");
-const paymentModal = document.getElementById("paymentModal");
+const bulkPaymentSection = document.getElementById("bulkPaymentSection");
+const bulkPaymentTable = document.getElementById("bulkPaymentTable");
 
 let cycle = null;
 let students = [];
@@ -29,6 +33,7 @@ let entriesByUser = {};
 let specialValuesMap = {};
 let guestMeals = [];
 let payments = [];
+let finesMap = {};
 let dates = [];
 
 onAuthStateChanged(auth, async (user) => {
@@ -89,6 +94,7 @@ async function loadAll() {
   specialValuesMap = await getAllSpecialValues(cycle.id);
   guestMeals = await getAllGuestMeals(cycle.id);
   payments = await getAllPayments(cycle.id);
+  finesMap = await getAllFines(cycle.id);
 
   document.getElementById("mealRateInput").value = cycle.mealRate || "";
   document.getElementById("fixedCostInput").value = cycle.fixedCostPerHead || "";
@@ -171,146 +177,186 @@ function renderGuestMealList() {
     </table>`;
 }
 
-// ---------- বিলিং টেবিল ----------
-function renderBillingTable() {
+// ---------- একজন স্টুডেন্টের সম্পূর্ণ বিল হিসাব (ফাইন + রাউন্ডিং সহ) ----------
+function computeFullBill(student) {
+  const entries = entriesByUser[student.id] || {};
+  const myGuestMeals = guestMeals.filter((g) => g.userId === student.id);
+  const result = computeStudentBilling(entries, dates, cycle.startDate, specialValuesMap, myGuestMeals);
+
+  const guestUnits = myGuestMeals.reduce((sum, g) => {
+    const dayVal = specialValuesMap[g.date]
+      ? { lunch: specialValuesMap[g.date].lunchValue, dinner: specialValuesMap[g.date].dinnerValue }
+      : { lunch: 1, dinner: 1 };
+    return sum + (g.lunchCount || 0) * dayVal.lunch + (g.dinnerCount || 0) * dayVal.dinner;
+  }, 0);
+
+  const fine = (finesMap[student.id] && finesMap[student.id].amount) || 0;
   const mealRate = cycle.mealRate || 0;
   const fixedCost = cycle.fixedCostPerHead || 0;
 
+  const totalUnits = result.billingUnits + fine;
+  const mealBill = totalUnits * mealRate;
+  const rawTotalBill = mealBill + fixedCost;
+  const totalBill = roundBillUp5(rawTotalBill);
+
+  const myPayments = payments.filter((p) => p.userId === student.id);
+  const totalPaid = myPayments.reduce((s, p) => s + (p.amount || 0), 0);
+  const due = totalBill - totalPaid;
+
+  return { ...result, guestUnits, fine, totalUnits, mealBill, fixedCost, rawTotalBill, totalBill, totalPaid, due };
+}
+
+// ---------- বিলিং টেবিল ----------
+function renderBillingTable() {
   let headerRow = `<tr>
     <th class="name-col">নাম</th><th>রুম</th>
     <th>Att.<br/>Lunch</th><th>Att.<br/>Dinner</th><th>Extra</th>
-    <th>Guest<br/>Units</th><th>Total<br/>Units</th>
+    <th>Guest<br/>Units</th><th>জরিমানা<br/>(মিল)</th><th>Total<br/>Units</th>
     <th>মিল বিল</th><th>ফিক্সড কস্ট</th><th>টোটাল বিল</th>
-    <th>জমা</th><th>Due/Return</th><th>অ্যাকশন</th>
+    <th>জমা</th><th>Due/Return</th>
   </tr>`;
 
   let bodyRows = "";
 
   students.forEach((student) => {
-    const entries = entriesByUser[student.id] || {};
-    const myGuestMeals = guestMeals.filter((g) => g.userId === student.id);
-    const result = computeStudentBilling(entries, dates, cycle.startDate, specialValuesMap, myGuestMeals);
-
-    const guestUnits = myGuestMeals.reduce((sum, g) => {
-      const dayVal = specialValuesMap[g.date]
-        ? { lunch: specialValuesMap[g.date].lunchValue, dinner: specialValuesMap[g.date].dinnerValue }
-        : { lunch: 1, dinner: 1 };
-      return sum + (g.lunchCount || 0) * dayVal.lunch + (g.dinnerCount || 0) * dayVal.dinner;
-    }, 0);
-
-    const mealBill = result.billingUnits * mealRate;
-    const totalBill = mealBill + fixedCost;
-
-    const myPayments = payments.filter((p) => p.userId === student.id);
-    const totalPaid = myPayments.reduce((s, p) => s + (p.amount || 0), 0);
-    const due = totalBill - totalPaid; // পজিটিভ = বাকি আছে, নেগেটিভ = বেশি দিয়েছে (ফেরত)
+    const b = computeFullBill(student);
 
     bodyRows += `
       <tr>
         <td class="name-col">${escapeHtml(student.name)}</td>
         <td>${escapeHtml(student.roomNumber)}</td>
-        <td>${result.attendanceLunch}</td>
-        <td>${result.attendanceDinner}</td>
-        <td>${result.extraLunch}</td>
-        <td>${guestUnits.toFixed(1)}</td>
-        <td><strong>${result.billingUnits.toFixed(1)}</strong></td>
-        <td>${mealBill.toFixed(2)}</td>
-        <td>${fixedCost.toFixed(2)}</td>
-        <td><strong>${totalBill.toFixed(2)}</strong></td>
-        <td>${totalPaid.toFixed(2)}</td>
-        <td class="${due > 0 ? "due-positive" : due < 0 ? "due-negative" : ""}">
-          ${due > 0 ? `বাকি ${due.toFixed(2)}` : due < 0 ? `ফেরত ${Math.abs(due).toFixed(2)}` : "০"}
+        <td>${b.attendanceLunch}</td>
+        <td>${b.attendanceDinner}</td>
+        <td>${b.extraLunch}</td>
+        <td>${b.guestUnits.toFixed(1)}</td>
+        <td><input type="number" step="0.5" class="fine-input" data-uid="${student.id}" value="${b.fine || ""}" placeholder="0" style="width:64px; padding:5px; border:1px solid var(--color-border); border-radius:6px;" /></td>
+        <td><strong>${b.totalUnits.toFixed(1)}</strong></td>
+        <td>${b.mealBill.toFixed(2)}</td>
+        <td>${b.fixedCost.toFixed(2)}</td>
+        <td><strong>${b.totalBill.toFixed(0)}</strong></td>
+        <td>${b.totalPaid.toFixed(2)}</td>
+        <td class="${b.due > 0 ? "due-positive" : b.due < 0 ? "due-negative" : ""}">
+          ${b.due > 0 ? `বাকি ${b.due.toFixed(0)}` : b.due < 0 ? `ফেরত ${Math.abs(b.due).toFixed(0)}` : "০"}
         </td>
-        <td><button class="btn btn-outline btn-sm" data-pay="${student.id}" data-name="${escapeHtml(student.name)}">পেমেন্ট যোগ</button></td>
       </tr>`;
   });
 
   billingTable.innerHTML = `<thead>${headerRow}</thead><tbody>${bodyRows}</tbody>`;
 
-  billingTable.querySelectorAll("[data-pay]").forEach((btn) => {
-    btn.addEventListener("click", () => openPaymentModal(btn.dataset.pay, btn.dataset.name));
+  // ফাইন ইনপুট — বদলালে সেভ হয়ে যাবে (ব্লার হলে)
+  billingTable.querySelectorAll(".fine-input").forEach((input) => {
+    input.addEventListener("change", async () => {
+      const uid = input.dataset.uid;
+      const amount = parseFloat(input.value) || 0;
+      await setFine(cycle.id, uid, amount, "");
+      finesMap[uid] = { amount, note: "" };
+      renderBillingTable();
+    });
   });
 }
 
-// ---------- পেমেন্ট এন্ট্রি মোডাল ----------
-function openPaymentModal(uid, name) {
-  const myPayments = payments.filter((p) => p.userId === uid);
-  const historyHtml = myPayments.length
-    ? myPayments.map((p) => `<div class="diff-row" style="border:none; padding:4px 0;">${p.date} — ৳${p.amount} ${p.note ? `(${escapeHtml(p.note)})` : ""}</div>`).join("")
-    : `<p style="font-size:12.5px;">এখনো কোনো পেমেন্ট নেই।</p>`;
+// ---------- বাল্ক পেমেন্ট এন্ট্রি ----------
+document.getElementById("bulkPaymentBtn").addEventListener("click", () => {
+  const isHidden = bulkPaymentSection.style.display === "none" || !bulkPaymentSection.style.display;
+  bulkPaymentSection.style.display = isHidden ? "block" : "none";
+  if (isHidden) renderBulkPaymentTable();
+});
 
-  paymentModal.innerHTML = `
-    <div class="modal-backdrop-billing">
-      <div class="modal-box-billing">
-        <h3 style="margin-bottom:12px;">${name} — পেমেন্ট</h3>
-        <div style="max-height:150px; overflow-y:auto; margin-bottom:14px;">${historyHtml}</div>
-        <div class="field">
-          <label>নতুন কিস্তির পরিমাণ (৳)</label>
-          <input type="number" id="paymentAmount" step="1" />
-        </div>
-        <div class="field">
-          <label>নোট (অপশনাল)</label>
-          <input type="text" id="paymentNote" placeholder="যেমন: ২য় কিস্তি" />
-        </div>
-        <div style="display:flex; gap:10px; margin-top:14px;">
-          <button class="btn btn-outline" id="paymentCancel" style="width:auto; flex:1;">বন্ধ করো</button>
-          <button class="btn btn-primary" id="paymentSave" style="width:auto; flex:1;">যোগ করো</button>
-        </div>
-      </div>
-    </div>`;
+function renderBulkPaymentTable() {
+  let headerRow = `<tr>
+    <th class="name-col">নাম</th><th>রুম</th><th>মোট জমা</th>
+    <th>কিস্তি ১</th><th>কিস্তি ২</th><th>কিস্তি ৩</th><th>কিস্তি ৪</th><th>কিস্তি ৫</th>
+  </tr>`;
 
-  document.getElementById("paymentCancel").addEventListener("click", () => (paymentModal.innerHTML = ""));
-  document.getElementById("paymentSave").addEventListener("click", async () => {
-    const amount = document.getElementById("paymentAmount").value;
-    const note = document.getElementById("paymentNote").value.trim();
-    if (!amount || isNaN(amount)) {
-      alert("সঠিক পরিমাণ দাও।");
-      return;
+  const bodyRows = students
+    .map((student) => {
+      const myPayments = payments.filter((p) => p.userId === student.id);
+      const totalPaid = myPayments.reduce((s, p) => s + (p.amount || 0), 0);
+      const installmentInputs = [1, 2, 3, 4, 5]
+        .map(
+          (n) =>
+            `<td><input type="number" step="1" class="installment-input" data-uid="${student.id}" data-slot="${n}" placeholder="৳" style="width:70px; padding:5px; border:1px solid var(--color-border); border-radius:6px;" /></td>`
+        )
+        .join("");
+
+      return `<tr>
+        <td class="name-col">${escapeHtml(student.name)}</td>
+        <td>${escapeHtml(student.roomNumber)}</td>
+        <td><strong>${totalPaid.toFixed(0)}</strong></td>
+        ${installmentInputs}
+      </tr>`;
+    })
+    .join("");
+
+  bulkPaymentTable.innerHTML = `<thead>${headerRow}</thead><tbody>${bodyRows}</tbody>`;
+}
+
+document.getElementById("saveBulkPaymentBtn").addEventListener("click", async () => {
+  const btn = document.getElementById("saveBulkPaymentBtn");
+  btn.disabled = true;
+  btn.textContent = "সেভ হচ্ছে...";
+
+  // প্রতি স্টুডেন্টের ৫টা কিস্তি-ঘরের যোগফল বের করে একটাই পেমেন্ট এন্ট্রি হিসেবে সেভ করা হবে
+  const totals = {};
+  bulkPaymentTable.querySelectorAll(".installment-input").forEach((input) => {
+    const val = parseFloat(input.value);
+    if (!val || val <= 0) return;
+    const uid = input.dataset.uid;
+    totals[uid] = (totals[uid] || 0) + val;
+  });
+
+  const uids = Object.keys(totals);
+  if (uids.length === 0) {
+    alert("কোনো ঘরে টাকার পরিমাণ দেয়া হয়নি।");
+    btn.disabled = false;
+    btn.textContent = "সব সেভ করো";
+    return;
+  }
+
+  try {
+    for (const uid of uids) {
+      await addPayment(cycle.id, uid, totals[uid], "বাল্ক এন্ট্রি");
     }
-    await addPayment(cycle.id, uid, amount, note);
     payments = await getAllPayments(cycle.id);
-    paymentModal.innerHTML = "";
+
+    const summaryLines = uids.map((uid) => {
+      const student = students.find((s) => s.id === uid);
+      return `${student ? student.name : uid}: +৳${totals[uid]}`;
+    });
+    alert(`${uids.length} জনের পেমেন্ট যোগ হয়েছে —\n\n${summaryLines.join("\n")}`);
+
+    bulkPaymentSection.style.display = "none";
     renderBillingTable();
-  });
-}
+  } catch (err) {
+    console.error(err);
+    alert("পেমেন্ট সেভ করতে সমস্যা হয়েছে।");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "সব সেভ করো";
+  }
+});
 
 // ---------- CSV এক্সপোর্ট (UTF-8 BOM) ----------
 document.getElementById("exportCsvBtn").addEventListener("click", () => {
-  const mealRate = cycle.mealRate || 0;
-  const fixedCost = cycle.fixedCostPerHead || 0;
-
-  const headers = ["নাম", "রুম", "Attendance Lunch", "Attendance Dinner", "Extra Lunch", "Guest Units", "Total Units", "মিল বিল", "ফিক্সড কস্ট", "টোটাল বিল", "জমা", "Due/Return"];
+  const headers = ["নাম", "রুম", "Attendance Lunch", "Attendance Dinner", "Extra Lunch", "Guest Units", "জরিমানা", "Total Units", "মিল বিল", "ফিক্সড কস্ট", "টোটাল বিল", "জমা", "Due/Return"];
   const rows = [headers];
 
   students.forEach((student) => {
-    const entries = entriesByUser[student.id] || {};
-    const myGuestMeals = guestMeals.filter((g) => g.userId === student.id);
-    const result = computeStudentBilling(entries, dates, cycle.startDate, specialValuesMap, myGuestMeals);
-    const guestUnits = myGuestMeals.reduce((sum, g) => {
-      const dayVal = specialValuesMap[g.date]
-        ? { lunch: specialValuesMap[g.date].lunchValue, dinner: specialValuesMap[g.date].dinnerValue }
-        : { lunch: 1, dinner: 1 };
-      return sum + (g.lunchCount || 0) * dayVal.lunch + (g.dinnerCount || 0) * dayVal.dinner;
-    }, 0);
-    const mealBill = result.billingUnits * mealRate;
-    const totalBill = mealBill + fixedCost;
-    const myPayments = payments.filter((p) => p.userId === student.id);
-    const totalPaid = myPayments.reduce((s, p) => s + (p.amount || 0), 0);
-    const due = totalBill - totalPaid;
-
+    const b = computeFullBill(student);
     rows.push([
       student.name,
       student.roomNumber,
-      result.attendanceLunch,
-      result.attendanceDinner,
-      result.extraLunch,
-      guestUnits.toFixed(1),
-      result.billingUnits.toFixed(1),
-      mealBill.toFixed(2),
-      fixedCost.toFixed(2),
-      totalBill.toFixed(2),
-      totalPaid.toFixed(2),
-      due.toFixed(2),
+      b.attendanceLunch,
+      b.attendanceDinner,
+      b.extraLunch,
+      b.guestUnits.toFixed(1),
+      b.fine,
+      b.totalUnits.toFixed(1),
+      b.mealBill.toFixed(2),
+      b.fixedCost.toFixed(2),
+      b.totalBill.toFixed(0),
+      b.totalPaid.toFixed(2),
+      b.due.toFixed(0),
     ]);
   });
 
@@ -322,8 +368,10 @@ document.getElementById("exportCsvBtn").addEventListener("click", () => {
   a.download = `bill-${cycle.id}.csv`;
   document.body.appendChild(a);
   a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 1000);
 });
 
 function csvEscape(val) {

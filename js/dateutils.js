@@ -14,6 +14,11 @@ export function toBanglaNumber(n) {
   return n.toString().replace(/[0-9]/g, (d) => BANGLA_DIGITS[d]);
 }
 
+export function banglaToEnglishDigits(str) {
+  if (!str) return str;
+  return str.toString().replace(/[০-৯]/g, (d) => BANGLA_DIGITS.indexOf(d).toString());
+}
+
 // এখন বাংলাদেশ সময়ে কত তারিখ/সময় সেটা বের করা
 export function bdNowParts() {
   const parts = new Intl.DateTimeFormat("en-CA", {

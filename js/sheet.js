@@ -14,6 +14,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getActiveCycle } from "./cycle.js";
 import { getAllSpecialValues, getAllGuestMeals } from "./billing.js";
+import { getOrCreateExpenses, setExpenseValue } from "./expenses.js";
 import {
   bdToday,
   addDays,
@@ -40,9 +41,12 @@ let studentsCache = [];
 let entriesByUser = {};
 let specialValuesMap = {};
 let guestMeals = [];
+let expensesData = { market: {}, other: {}, gas: {} };
 let selectedCell = null;
 let lastKeyInfo = null; // {key, time, cell}
 let showFullMonth = false;
+
+const expenseTable = document.getElementById("expenseTable");
 
 onAuthStateChanged(auth, async (user) => {
   if (!user) {
@@ -87,26 +91,25 @@ function exportSheetCsv() {
 
     const dates = getVisibleDates();
     const cycleStartDate = activeCycle.startDate;
-    const today = bdToday();
 
-    const headers = ["নাম", "রুম", "Total Lunch", "Total Dinner", "Extra Lunch", "Total Meal", ...dates.map((d) => formatDateColumnLabel(d))];
+    const headers = ["নাম", "রুম", "Total Lunch", "Total Dinner", "Extra Lunch", "স্পেশাল মিল", "গেস্ট মিল", "Total Meal", ...dates.map((d) => formatDateColumnLabel(d))];
     const rows = [headers];
 
     studentsCache.forEach((student) => {
       const entries = entriesByUser[student.id] || {};
-      let totalLunch = 0;
-      let totalDinner = 0;
-      const cellVals = dates.map((dateStr) => {
-        const val = resolveSelection(entries, dateStr, cycleStartDate).value;
-        if (dateStr <= today) {
-          if (val === "lunch" || val === "both") totalLunch++;
-          if (val === "dinner" || val === "both") totalDinner++;
-        }
-        return MEAL_LABELS[val];
-      });
-      const extraLunch = Math.max(0, (totalLunch - totalDinner) * 0.5);
-      const totalMeal = totalLunch + totalDinner + extraLunch;
-      rows.push([student.name, student.roomNumber, totalLunch, totalDinner, extraLunch, totalMeal, ...cellVals]);
+      const cellVals = dates.map((dateStr) => MEAL_LABELS[resolveSelection(entries, dateStr, cycleStartDate).value]);
+      const s = computeStudentSummary(student);
+      rows.push([
+        student.name,
+        student.roomNumber,
+        s.totalLunch,
+        s.totalDinner,
+        s.extraLunch,
+        s.specialBonus.toFixed(1),
+        s.guestUnits.toFixed(1),
+        s.totalMeal.toFixed(1),
+        ...cellVals,
+      ]);
     });
 
     const csvContent = rows.map((r) => r.map(csvEscape).join(",")).join("\r\n");
@@ -173,8 +176,10 @@ async function buildSheet() {
 
   specialValuesMap = await getAllSpecialValues(cycle.id);
   guestMeals = await getAllGuestMeals(cycle.id);
+  expensesData = await getOrCreateExpenses(cycle.id);
 
   renderTable();
+  renderExpenseTable();
 }
 
 function getFullCycleDates() {
@@ -203,6 +208,63 @@ function specialColorClass(dateStr) {
   return anyDeviation ? "special-col" : "";
 }
 
+// সামারি (বিলিং-সংক্রান্ত) কলাম সবসময় পুরো সাইকেল থেকে আজ পর্যন্ত হিসাব করবে,
+// "সংক্ষিপ্ত/পুরো মাস" টগল শুধু কলাম (দিন-ভিত্তিক ঘর) কয়টা দেখাবে সেটা ঠিক করে, সামারি না
+function getFullToDateRange() {
+  const today = bdToday();
+  const dates = [];
+  let d = activeCycle.startDate;
+  while (d <= today) {
+    dates.push(d);
+    d = addDays(d, 1);
+  }
+  return dates;
+}
+
+function getDayValue(dateStr) {
+  const sv = specialValuesMap[dateStr];
+  return sv ? { lunch: sv.lunchValue, dinner: sv.dinnerValue } : { lunch: 1, dinner: 1 };
+}
+
+// একজন স্টুডেন্টের সব সামারি সংখ্যা একসাথে বের করা — Total Lunch/Dinner/Extra/স্পেশাল/গেস্ট/Total Meal
+function computeStudentSummary(student) {
+  const entries = entriesByUser[student.id] || {};
+  const fullDates = getFullToDateRange();
+
+  let totalLunch = 0;
+  let totalDinner = 0;
+  let specialBonus = 0;
+
+  fullDates.forEach((dateStr) => {
+    const val = resolveSelection(entries, dateStr, activeCycle.startDate).value;
+    const dayVal = getDayValue(dateStr);
+    if (val === "lunch" || val === "both") {
+      totalLunch++;
+      specialBonus += dayVal.lunch - 1;
+    }
+    if (val === "dinner" || val === "both") {
+      totalDinner++;
+      specialBonus += dayVal.dinner - 1;
+    }
+  });
+
+  const myGuestMeals = guestMeals.filter((g) => g.userId === student.id && g.date <= bdToday());
+  let guestLunchCount = 0;
+  let guestDinnerCount = 0;
+  let guestUnits = 0;
+  myGuestMeals.forEach((g) => {
+    const dayVal = getDayValue(g.date);
+    guestLunchCount += g.lunchCount || 0;
+    guestDinnerCount += g.dinnerCount || 0;
+    guestUnits += (g.lunchCount || 0) * dayVal.lunch + (g.dinnerCount || 0) * dayVal.dinner;
+  });
+
+  const extraLunch = Math.max(0, (totalLunch + guestLunchCount - (totalDinner + guestDinnerCount)) * 0.5);
+  const totalMeal = totalLunch + totalDinner + extraLunch + specialBonus + guestUnits;
+
+  return { totalLunch, totalDinner, extraLunch, specialBonus, guestUnits, totalMeal };
+}
+
 function renderTable() {
   const students = studentsCache;
   const dates = getVisibleDates();
@@ -216,7 +278,7 @@ function renderTable() {
   const today = bdToday();
 
   let headerCells = `<th class="name-col">নাম</th><th>রুম</th>
-    <th>Total<br/>Lunch</th><th>Total<br/>Dinner</th><th>Extra<br/>Lunch</th><th>Total<br/>Meal</th>`;
+    <th>Total<br/>Lunch</th><th>Total<br/>Dinner</th><th>Extra<br/>Lunch</th><th>স্পেশাল<br/>মিল</th><th>গেস্ট<br/>মিল</th><th>Total<br/>Meal</th>`;
   dates.forEach((d) => {
     const isFuture = d > today;
     const specialCls = specialColorClass(d);
@@ -246,7 +308,7 @@ function renderTable() {
   });
 
   const rowHtml = (label, valuesMap) =>
-    `<tr class="daily-total-row"><td class="name-col" colspan="6">${label}</td>${dates
+    `<tr class="daily-total-row"><td class="name-col" colspan="8">${label}</td>${dates
       .map((d) => `<td class="daily-total-cell">${valuesMap[d]}</td>`)
       .join("")}</tr>`;
 
@@ -269,34 +331,29 @@ function renderTable() {
   students.forEach((student) => {
     const entries = entriesByUser[student.id] || {};
 
-    let totalLunch = 0;
-    let totalDinner = 0;
     const cellsHtml = dates
       .map((dateStr) => {
         const resolved = resolveSelection(entries, dateStr, cycleStartDate);
         const val = resolved.value;
         const isFuture = dateStr > today;
-        if (!isFuture) {
-          totalLunch += val === "lunch" || val === "both" ? 1 : 0;
-          totalDinner += val === "dinner" || val === "both" ? 1 : 0;
-        }
         const specialCls = specialColorClass(dateStr);
         const cls = (val === "off" ? "off-cell" : "on-cell") + (isFuture ? " future-col" : "") + (specialCls ? " " + specialCls : "");
         return `<td class="${cls}" tabindex="0" data-uid="${student.id}" data-date="${dateStr}" data-value="${val}">${MEAL_SHORT[val]}</td>`;
       })
       .join("");
 
-    const extraLunch = Math.max(0, (totalLunch - totalDinner) * 0.5);
-    const totalMeal = totalLunch + totalDinner + extraLunch;
+    const s = computeStudentSummary(student);
 
     bodyRows += `
       <tr>
         <td class="name-col">${escapeHtml(student.name)}</td>
         <td>${escapeHtml(student.roomNumber)}</td>
-        <td class="summary-col">${totalLunch}</td>
-        <td class="summary-col">${totalDinner}</td>
-        <td class="summary-col">${extraLunch}</td>
-        <td class="summary-col">${totalMeal}</td>
+        <td class="summary-col">${s.totalLunch}</td>
+        <td class="summary-col">${s.totalDinner}</td>
+        <td class="summary-col">${s.extraLunch}</td>
+        <td class="summary-col">${s.specialBonus.toFixed(1)}</td>
+        <td class="summary-col">${s.guestUnits.toFixed(1)}</td>
+        <td class="summary-col">${s.totalMeal.toFixed(1)}</td>
         ${cellsHtml}
       </tr>`;
   });
@@ -437,4 +494,77 @@ function escapeHtml(str) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+// ---------- খরচের হিসাব (মিল শিটের নিচের ৪টা রো) ----------
+const EXPENSE_EXTRA_KEY = "extra";
+
+function getExpenseDateKeys() {
+  const keys = [];
+  for (let i = 0; i < CYCLE_LENGTH_DAYS; i++) {
+    keys.push(addDays(activeCycle.startDate, i));
+  }
+  keys.push(EXPENSE_EXTRA_KEY);
+  return keys;
+}
+
+function renderExpenseTable() {
+  if (!activeCycle) return;
+  const keys = getExpenseDateKeys();
+
+  const headerCells = keys
+    .map((k) => `<th>${k === EXPENSE_EXTRA_KEY ? "এক্সট্রা" : formatDateColumnLabel(k)}</th>`)
+    .join("");
+
+  function inputRow(label, category) {
+    const cells = keys
+      .map((k) => {
+        const val = (expensesData[category] && expensesData[category][k]) || "";
+        return `<td><input type="number" step="1" class="expense-input" data-category="${category}" data-key="${k}" value="${val || ""}" placeholder="0" /></td>`;
+      })
+      .join("");
+    const total = keys.reduce((sum, k) => sum + ((expensesData[category] && expensesData[category][k]) || 0), 0);
+    return `<tr><td class="name-col">${label}</td>${cells}<td class="expense-total">${total}</td></tr>`;
+  }
+
+  function computedRow(label) {
+    const cells = keys
+      .map((k) => {
+        const market = (expensesData.market && expensesData.market[k]) || 0;
+        const other = (expensesData.other && expensesData.other[k]) || 0;
+        return `<td class="expense-computed">${market - other}</td>`;
+      })
+      .join("");
+    const total = keys.reduce((sum, k) => {
+      const market = (expensesData.market && expensesData.market[k]) || 0;
+      const other = (expensesData.other && expensesData.other[k]) || 0;
+      return sum + (market - other);
+    }, 0);
+    return `<tr><td class="name-col">${label}</td>${cells}<td class="expense-total expense-computed">${total}</td></tr>`;
+  }
+
+  expenseTable.innerHTML = `
+    <thead><tr><th class="name-col">খাত</th>${headerCells}<th>টোটাল</th></tr></thead>
+    <tbody>
+      ${inputRow("মোট বাজার খরচ", "market")}
+      ${inputRow("অন্যান্য খরচ", "other")}
+      ${computedRow("মিলের বাজার")}
+      ${inputRow("গ্যাস বিল", "gas")}
+    </tbody>`;
+
+  expenseTable.querySelectorAll(".expense-input").forEach((input) => {
+    input.addEventListener("change", async () => {
+      const { category, key } = input.dataset;
+      const value = parseFloat(input.value) || 0;
+      expensesData[category] = expensesData[category] || {};
+      expensesData[category][key] = value;
+      try {
+        await setExpenseValue(activeCycle.id, category, key, value);
+      } catch (err) {
+        console.error(err);
+        alert("খরচের হিসাব সেভ করতে সমস্যা হয়েছে।");
+      }
+      renderExpenseTable();
+    });
+  });
 }

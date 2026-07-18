@@ -78,6 +78,16 @@ service cloud.firestore {
       match /payments/{paymentId} {
         allow read, write: if isAdmin();
       }
+
+      // ===== ফাইন/জরিমানা (শুধু অ্যাডমিন) =====
+      match /fines/{userId} {
+        allow read, write: if isAdmin();
+      }
+
+      // ===== দৈনিক খরচের হিসাব (শুধু অ্যাডমিন) =====
+      match /expenses/{docId} {
+        allow read, write: if isAdmin();
+      }
     }
 
     // নোটিফিকেশন কালেকশন

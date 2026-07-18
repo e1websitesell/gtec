@@ -161,19 +161,32 @@
       <!-- ===== বিলিং টেবিল ===== -->
       <div class="section-title">
         <h3>বিলিং টেবিল</h3>
-        <button class="btn btn-outline btn-sm" id="exportCsvBtn">CSV ডাউনলোড করো</button>
+        <div style="display:flex; gap:8px;">
+          <button class="btn btn-outline btn-sm" id="bulkPaymentBtn">পেমেন্ট যোগ করো</button>
+          <button class="btn btn-outline btn-sm" id="exportCsvBtn">CSV ডাউনলোড করো</button>
+        </div>
       </div>
+
+      <!-- ===== বাল্ক পেমেন্ট এন্ট্রি (ডিফল্টে লুকানো) ===== -->
+      <div id="bulkPaymentSection" style="display:none; margin-bottom:20px;">
+        <div class="card" style="margin-bottom:10px;">
+          <p style="margin-bottom:0;">যার যার নামের পাশে যেই কিস্তির ঘরে টাকা বসাও, সব একসাথে নিচের "সব সেভ করো" চাপলেই যোগ হয়ে যাবে। একজনের জন্য একাধিক ঘরে দিলে সবগুলো যোগ হয়ে একটা এন্ট্রি হিসেবে সেভ হবে।</p>
+        </div>
+        <div class="sheet-wrap" style="margin-bottom:12px;">
+          <table class="sheet-table" id="bulkPaymentTable"></table>
+        </div>
+        <button class="btn btn-primary btn-sm" id="saveBulkPaymentBtn">সব সেভ করো</button>
+      </div>
+
       <div class="sheet-wrap" style="margin-bottom:20px;">
         <table class="sheet-table" id="billingTable"></table>
       </div>
       <p style="font-size:12px;">
-        Billing Units = (attendance অনুযায়ী লাঞ্চ/ডিনার × সেই দিনের ভ্যালু) + গেস্ট মিল ইউনিট + Extra Lunch। Total Bill = Billing Units × মিল রেট + ফিক্সড কস্ট।
+        Total Units = Attendance + Extra Lunch + স্পেশাল ভ্যালুর বাড়তি + Guest Units + জরিমানা। টোটাল বিল সবসময় ৫-এর গুণিতকে উপরের দিকে রাউন্ড করা হয় (যেমন ৯৯৩ হলে ৯৯৫), যাতে ম্যানেজারের ঘাটতি না পড়ে।
       </p>
     </div>
   </div>
 </div>
-
-<div id="paymentModal"></div>
 
 <script type="module" src="../js/billingpage.js"></script>
 </body>

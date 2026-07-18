@@ -1,4 +1,5 @@
 import { auth, db, usernameToEmail } from "./firebase-config.js";
+import { banglaToEnglishDigits } from "./dateutils.js";
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -73,7 +74,7 @@ signupForm.addEventListener("submit", async (e) => {
   clearAlerts();
 
   const name = document.getElementById("signupName").value.trim();
-  const room = document.getElementById("signupRoom").value.trim();
+  const room = banglaToEnglishDigits(document.getElementById("signupRoom").value.trim());
   const username = document.getElementById("signupUsername").value.trim();
   const password = document.getElementById("signupPassword").value;
 

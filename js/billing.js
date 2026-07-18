@@ -81,6 +81,26 @@ export async function getAllPayments(cycleId) {
   return list;
 }
 
+// ---------- ফাইন (জরিমানা, মিল-ইউনিটে) ----------
+export async function getAllFines(cycleId) {
+  const snap = await getDocs(collection(db, "cycles", cycleId, "fines"));
+  const map = {};
+  snap.forEach((d) => (map[d.id] = d.data()));
+  return map; // { userId: { amount, note } }
+}
+
+export async function setFine(cycleId, userId, amount, note) {
+  await setDoc(doc(db, "cycles", cycleId, "fines", userId), {
+    amount: Number(amount) || 0,
+    note: note || "",
+  });
+}
+
+// ---------- বিল ৫-এর গুণিতকে রাউন্ড করা (সবসময় উপরের দিকে, যাতে ম্যানেজারের ঘাটতি না পড়ে) ----------
+export function roundBillUp5(amount) {
+  return Math.ceil(amount / 5) * 5;
+}
+
 // ---------- সাইকেলে মিল রেট / ফিক্সড কস্ট সেট করা ----------
 export async function setBillingConfig(cycleId, mealRate, fixedCostPerHead) {
   await updateDoc(doc(db, "cycles", cycleId), {
@@ -125,13 +145,18 @@ export function computeStudentBilling(entries, dates, cycleStartDate, specialVal
   });
 
   // গেস্ট মিল — সেই তারিখের ভ্যালু অনুযায়ী যোগ হবে
+  let guestLunchCount = 0;
+  let guestDinnerCount = 0;
   guestMealsForUser.forEach((g) => {
     const dayVal = getDayValue(specialValuesMap, g.date);
     billingUnits += (g.lunchCount || 0) * dayVal.lunch;
     billingUnits += (g.dinnerCount || 0) * dayVal.dinner;
+    guestLunchCount += g.lunchCount || 0;
+    guestDinnerCount += g.dinnerCount || 0;
   });
 
-  const extraLunch = Math.max(0, (attendanceLunch - attendanceDinner) * 0.5);
+  // Extra Lunch বোনাস — নিজের attendance + গেস্ট মিল দুটোই ধরে হিসাব হবে
+  const extraLunch = Math.max(0, (attendanceLunch + guestLunchCount - (attendanceDinner + guestDinnerCount)) * 0.5);
   billingUnits += extraLunch;
 
   return { attendanceLunch, attendanceDinner, extraLunch, billingUnits };
