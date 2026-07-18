@@ -174,8 +174,8 @@ async function buildSheet() {
     entriesByUser[docSnap.id] = docSnap.data().entries || {};
   });
 
-  specialValuesMap = await getAllSpecialValues(cycle.id);
-  guestMeals = await getAllGuestMeals(cycle.id);
+  specialValuesMap = await safeLoad(() => getAllSpecialValues(cycle.id), {}, "স্পেশাল ডে ভ্যালু");
+  guestMeals = await safeLoad(() => getAllGuestMeals(cycle.id), [], "গেস্ট মিল");
 
   // মূল মিল শিট আগেই রেন্ডার করে ফেলছি — নিচের খরচের হিসাব লোড করতে সমস্যা হলেও যেন মূল শিট দেখা যায়
   renderTable();
@@ -186,6 +186,16 @@ async function buildSheet() {
   } catch (err) {
     console.error("Expense data load error:", err);
     expenseTable.innerHTML = `<tbody><tr><td class="name-col">ব্যয়ের হিসাব লোড করতে সমস্যা হয়েছে। Firestore Rules Publish করা হয়েছে কিনা চেক করো। (${err.message})</td></tr></tbody>`;
+  }
+}
+
+// কোনো একটা ডেটা লোড ফেইল করলে বাকি পেজ যেন থেমে না যায়
+async function safeLoad(fn, fallback, label) {
+  try {
+    return await fn();
+  } catch (err) {
+    console.error(`${label} লোড করতে সমস্যা:`, err);
+    return fallback;
   }
 }
 
@@ -368,8 +378,8 @@ function renderTable() {
   sheetContainer.innerHTML = `
     <table class="sheet-table">
       <thead>
-        <tr>${headerCells}</tr>
         ${summaryRows}
+        <tr>${headerCells}</tr>
       </thead>
       <tbody>${bodyRows}</tbody>
     </table>`;

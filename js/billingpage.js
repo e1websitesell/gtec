@@ -91,16 +91,10 @@ async function loadAll() {
   entriesByUser = {};
   entriesSnap.forEach((docSnap) => (entriesByUser[docSnap.id] = docSnap.data().entries || {}));
 
-  specialValuesMap = await getAllSpecialValues(cycle.id);
-  guestMeals = await getAllGuestMeals(cycle.id);
-  payments = await getAllPayments(cycle.id);
-
-  try {
-    finesMap = await getAllFines(cycle.id);
-  } catch (err) {
-    console.error("Fines load error:", err);
-    finesMap = {};
-  }
+  specialValuesMap = await safeLoad(() => getAllSpecialValues(cycle.id), {}, "স্পেশাল ডে ভ্যালু");
+  guestMeals = await safeLoad(() => getAllGuestMeals(cycle.id), [], "গেস্ট মিল");
+  payments = await safeLoad(() => getAllPayments(cycle.id), [], "পেমেন্ট");
+  finesMap = await safeLoad(() => getAllFines(cycle.id), {}, "জরিমানা");
 
   document.getElementById("mealRateInput").value = cycle.mealRate || "";
   document.getElementById("fixedCostInput").value = cycle.fixedCostPerHead || "";
@@ -108,6 +102,16 @@ async function loadAll() {
   renderSpecialList();
   renderGuestMealList();
   renderBillingTable();
+}
+
+// কোনো একটা ডেটা লোড ফেইল করলে বাকি পেজ যেন থেমে না যায় — এরর কনসোলে দেখাবে, ফাঁকা ডিফল্ট দিয়ে এগিয়ে যাবে
+async function safeLoad(fn, fallback, label) {
+  try {
+    return await fn();
+  } catch (err) {
+    console.error(`${label} লোড করতে সমস্যা:`, err);
+    return fallback;
+  }
 }
 
 // ---------- স্পেশাল ডে ভ্যালু ----------
