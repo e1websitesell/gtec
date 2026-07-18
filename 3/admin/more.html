@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>আরও — GTEC Boys Hostel</title>
+<meta name="theme-color" content="#1e3a5f" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="../css/style.css" />
+<style>
+  .tab-strip {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    margin-bottom: 18px;
+  }
+  .tab-strip button {
+    flex-shrink: 0;
+    padding: 9px 16px;
+    border-radius: 999px;
+    border: 1.5px solid var(--color-border);
+    background: #fff;
+    font-family: var(--font-body);
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    cursor: pointer;
+  }
+  .tab-strip button.active {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+    color: #fff;
+  }
+  .tab-pane { display: none; }
+  .tab-pane.active { display: block; }
+  .item-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: 14px;
+    margin-bottom: 10px;
+  }
+  .item-card img { max-width: 220px; border-radius: var(--radius-sm); margin-top: 8px; }
+  .inline-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+  .inline-form .field { margin-bottom: 0; min-width: 130px; }
+  .option-input-row { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
+  .bar-track { background: var(--color-bg); border-radius: 4px; height: 8px; overflow: hidden; margin-top: 4px; }
+  .bar-fill { background: var(--color-primary); height: 100%; }
+</style>
+</head>
+<body>
+
+<div id="loadingScreen" class="state-screen">
+  <div class="spinner" style="display:inline-block; border-color:rgba(30,58,95,0.2); border-top-color:var(--color-primary); width:28px; height:28px;"></div>
+</div>
+
+<div id="appShell" style="display:none;">
+  <div class="admin-topbar">
+    <div class="brand" style="margin-bottom:0;">
+      <div class="brand-mark">G</div>
+      <div><div class="brand-name">আরও</div><div class="brand-sub">মেনু · রশিদ · পোল · রিপোর্ট</div></div>
+    </div>
+    <a href="dashboard.html" class="btn btn-outline btn-sm" style="text-decoration:none;">ড্যাশবোর্ড</a>
+  </div>
+
+  <div class="admin-main">
+    <div class="tab-strip">
+      <button class="active" data-tab="menu">মেনু</button>
+      <button data-tab="receipts">রশিদ</button>
+      <button data-tab="polls">পোল</button>
+      <button data-tab="election">ইলেকশন</button>
+      <button data-tab="reports">রিপোর্ট</button>
+    </div>
+
+    <!-- মেনু -->
+    <div class="tab-pane active" id="tab-menu">
+      <div class="card" style="margin-bottom:20px;">
+        <div class="inline-form">
+          <div class="field"><label>তারিখ</label><input type="date" id="menuDate" /></div>
+          <div class="field" style="flex:1; min-width:220px;">
+            <label>খাবার (কমা দিয়ে আলাদা করো)</label>
+            <input type="text" id="menuItems" placeholder="যেমন: ভাত, মুরগির মাংস, ডাল" />
+          </div>
+          <button class="btn btn-primary btn-sm" id="saveMenuBtn">সেভ করো</button>
+        </div>
+      </div>
+      <div id="menuList"></div>
+    </div>
+
+    <!-- রশিদ -->
+    <div class="tab-pane" id="tab-receipts">
+      <div class="card" style="margin-bottom:20px;">
+        <div class="field"><label>তারিখ</label><input type="date" id="receiptDate" /></div>
+        <div class="field"><label>ছবি</label><input type="file" id="receiptFile" accept="image/*" /></div>
+        <div class="field"><label>নোট (অপশনাল)</label><input type="text" id="receiptNote" /></div>
+        <button class="btn btn-primary btn-sm" id="uploadReceiptBtn">আপলোড করো</button>
+      </div>
+      <div id="receiptList"></div>
+    </div>
+
+    <!-- পোল -->
+    <div class="tab-pane" id="tab-polls">
+      <div class="card" style="margin-bottom:20px;">
+        <div class="field"><label>প্রশ্ন</label><input type="text" id="pollQuestion" placeholder="যেমন: এই সপ্তাহে কী মাংস খাবে?" /></div>
+        <div id="pollOptionsContainer">
+          <div class="option-input-row"><input type="text" class="poll-option-input" placeholder="অপশন ১" /></div>
+          <div class="option-input-row"><input type="text" class="poll-option-input" placeholder="অপশন ২" /></div>
+        </div>
+        <button class="btn btn-outline btn-sm" id="addPollOptionBtn" style="margin-bottom:10px;">+ আরেকটা অপশন</button>
+        <div class="field"><label>ডেডলাইন</label><input type="datetime-local" id="pollDeadline" /></div>
+        <button class="btn btn-primary btn-sm" id="createPollBtn">পোল চালু করো</button>
+      </div>
+      <div id="pollList"></div>
+    </div>
+
+    <!-- ইলেকশন -->
+    <div class="tab-pane" id="tab-election">
+      <div class="card" style="margin-bottom:20px;">
+        <div class="field"><label>প্রশ্ন / টাইটেল</label><input type="text" id="electionQuestion" placeholder="নতুন মিল ম্যানেজার নির্বাচন" /></div>
+        <div id="electionCandidatesContainer">
+          <div class="option-input-row">
+            <input type="text" class="election-name-input" placeholder="প্রার্থীর নাম" style="flex:1;" />
+            <input type="url" class="election-photo-input" placeholder="ছবির লিংক (অপশনাল)" style="flex:1;" />
+          </div>
+          <div class="option-input-row">
+            <input type="text" class="election-name-input" placeholder="প্রার্থীর নাম" style="flex:1;" />
+            <input type="url" class="election-photo-input" placeholder="ছবির লিংক (অপশনাল)" style="flex:1;" />
+          </div>
+        </div>
+        <button class="btn btn-outline btn-sm" id="addCandidateBtn" style="margin-bottom:10px;">+ আরেকজন প্রার্থী</button>
+        <div style="display:flex; gap:10px;">
+          <div class="field" style="flex:1;"><label>একজন কয়টা ভোট দিতে পারবে</label><input type="number" id="electionMaxSelect" value="1" min="1" /></div>
+          <div class="field" style="flex:1;"><label>ডেডলাইন</label><input type="datetime-local" id="electionDeadline" /></div>
+        </div>
+        <button class="btn btn-primary btn-sm" id="createElectionBtn">ইলেকশন চালু করো</button>
+      </div>
+      <div id="electionList"></div>
+    </div>
+
+    <!-- রিপোর্ট -->
+    <div class="tab-pane" id="tab-reports">
+      <div id="adminReportList"></div>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="../js/adminMore.js"></script>
+</body>
+</html>

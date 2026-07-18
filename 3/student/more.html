@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>আরও — GTEC Boys Hostel</title>
+<meta name="theme-color" content="#1e3a5f" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="../css/style.css" />
+<style>
+  .tab-strip {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    margin-bottom: 16px;
+  }
+  .tab-strip button {
+    flex-shrink: 0;
+    padding: 8px 14px;
+    border-radius: 999px;
+    border: 1.5px solid var(--color-border);
+    background: #fff;
+    font-family: var(--font-body);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    cursor: pointer;
+  }
+  .tab-strip button.active {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+    color: #fff;
+  }
+  .tab-pane {
+    display: none;
+  }
+  .tab-pane.active {
+    display: block;
+  }
+  .item-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: 14px;
+    margin-bottom: 10px;
+  }
+  .item-card img {
+    max-width: 100%;
+    border-radius: var(--radius-sm);
+    margin-top: 8px;
+  }
+  .notif-unread {
+    border-left: 3px solid var(--color-primary);
+    background: var(--color-primary-light);
+  }
+  .poll-option-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--color-border);
+    cursor: pointer;
+  }
+  .poll-option-row img {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    object-fit: cover;
+  }
+  .poll-option-row.selected {
+    background: var(--color-primary-light);
+  }
+  .bar-track {
+    background: var(--color-bg);
+    border-radius: 4px;
+    height: 8px;
+    overflow: hidden;
+    margin-top: 4px;
+  }
+  .bar-fill {
+    background: var(--color-primary);
+    height: 100%;
+  }
+  .bottom-nav {
+    position: sticky;
+    bottom: 0;
+    background: var(--color-surface);
+    border-top: 1px solid var(--color-border);
+    display: flex;
+    justify-content: space-around;
+    padding: 8px 0;
+    margin-top: 24px;
+  }
+  .bottom-nav a {
+    text-decoration: none;
+    color: var(--color-text-muted);
+    font-size: 12px;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<div id="loadingScreen" class="state-screen">
+  <div class="spinner" style="display:inline-block; border-color:rgba(30,58,95,0.2); border-top-color:var(--color-primary); width:28px; height:28px;"></div>
+</div>
+
+<div id="appShell" style="display:none; padding:20px 16px 0; max-width:480px; margin:0 auto;">
+  <div class="brand">
+    <div class="brand-mark">G</div>
+    <div>
+      <div class="brand-name">আরও</div>
+      <div class="brand-sub">GTEC Boys Hostel</div>
+    </div>
+  </div>
+
+  <div class="tab-strip">
+    <button class="active" data-tab="menu">মেনু</button>
+    <button data-tab="receipts">রশিদ</button>
+    <button data-tab="polls">পোল</button>
+    <button data-tab="report">রিপোর্ট</button>
+    <button data-tab="notif">নোটিফিকেশন <span id="notifBadge"></span></button>
+  </div>
+
+  <!-- মেনু -->
+  <div class="tab-pane active" id="tab-menu">
+    <div id="menuList"></div>
+  </div>
+
+  <!-- রশিদ -->
+  <div class="tab-pane" id="tab-receipts">
+    <div id="receiptList"></div>
+  </div>
+
+  <!-- পোল -->
+  <div class="tab-pane" id="tab-polls">
+    <div id="pollList"></div>
+  </div>
+
+  <!-- রিপোর্ট -->
+  <div class="tab-pane" id="tab-report">
+    <div class="card" style="margin-bottom:16px;">
+      <p id="reportLimitNote" style="font-size:12.5px; margin-bottom:10px;">লোড হচ্ছে...</p>
+      <div class="field">
+        <label>বিবরণ</label>
+        <textarea id="reportText" rows="4" placeholder="কী সমস্যা, লিখো..."></textarea>
+      </div>
+      <div class="field">
+        <label>ছবি/ভিডিও (অপশনাল)</label>
+        <input type="file" id="reportMedia" accept="image/*,video/*" />
+      </div>
+      <div class="field" style="display:flex; align-items:center; gap:8px;">
+        <input type="checkbox" id="reportAnon" style="width:auto;" />
+        <label for="reportAnon" style="margin:0;">নাম প্রকাশ না করে (অ্যানোনিমাস)</label>
+      </div>
+      <button class="btn btn-primary btn-sm" id="submitReportBtn">সাবমিট করো</button>
+    </div>
+    <h3 style="font-size:14px; margin-bottom:10px;">সব রিপোর্ট</h3>
+    <div id="reportList"></div>
+  </div>
+
+  <!-- নোটিফিকেশন -->
+  <div class="tab-pane" id="tab-notif">
+    <div id="notifList"></div>
+  </div>
+
+  <div class="bottom-nav">
+    <a href="home.html">🏠<br/>হোম</a>
+    <a href="more.html">📋<br/>আরও</a>
+    <a href="#" id="logoutBtn">🚪<br/>লগআউট</a>
+  </div>
+</div>
+
+<script type="module" src="../js/studentMore.js"></script>
+</body>
+</html>
